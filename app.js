@@ -858,14 +858,10 @@ const SelectionToolbar = {
     emits: ['format']
 };
 
-// Create and mount the app when DOM and Vue are ready
-if (typeof Vue === 'undefined') {
-    console.error('Vue is not loaded. Please check the CDN link.');
-} else {
-    const app = createApp(App);
-    app.component('AppHeader', AppHeader);
-    app.component('OutlinerNode', OutlinerNode);
-    app.component('ContextMenu', ContextMenu);
-    app.component('SelectionToolbar', SelectionToolbar);
-    app.mount('#app');
-}
+// Create and mount the app
+const app = createApp(App);
+app.component('AppHeader', AppHeader);
+app.component('OutlinerNode', OutlinerNode);
+app.component('ContextMenu', ContextMenu);
+app.component('SelectionToolbar', SelectionToolbar);
+app.mount('#app');

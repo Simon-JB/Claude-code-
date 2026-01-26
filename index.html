@@ -10,6 +10,19 @@
     <div id="app"></div>
 
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
-    <script src="app.js" defer></script>
+    <script>
+        // Wait for Vue to load before loading app.js
+        window.addEventListener('load', function() {
+            if (typeof Vue === 'undefined') {
+                console.error('Vue failed to load from CDN. Please check your internet connection.');
+                document.getElementById('app').innerHTML = '<div style="padding: 20px; text-align: center;"><h2>Error: Vue.js failed to load</h2><p>Please check your internet connection and refresh the page.</p></div>';
+            } else {
+                // Load app.js after Vue is confirmed available
+                var script = document.createElement('script');
+                script.src = 'app.js';
+                document.body.appendChild(script);
+            }
+        });
+    </script>
 </body>
 </html>
