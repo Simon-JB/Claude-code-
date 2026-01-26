@@ -648,3 +648,80 @@ body {
     background: transparent;
 }
 
+/* Drag and Drop Styles */
+.node-content[draggable="true"] {
+    cursor: move;
+}
+
+.node-content[draggable="true"]:active {
+    cursor: grabbing;
+}
+
+.node.dragging {
+    opacity: 0.4;
+}
+
+.node.drag-over {
+    background: rgba(37, 99, 235, 0.05);
+}
+
+/* Drop Zones */
+.drop-zone {
+    height: 4px;
+    margin: 2px 0;
+    background: transparent;
+    transition: all 0.2s;
+    position: relative;
+}
+
+.drop-zone::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 4px;
+    background: var(--primary-color);
+    opacity: 0;
+    transition: opacity 0.2s;
+    border-radius: 2px;
+}
+
+.drop-zone:hover::before,
+.drop-zone:dragover::before {
+    opacity: 1;
+}
+
+.drop-zone-before {
+    margin-top: -2px;
+}
+
+.drop-zone-after {
+    margin-bottom: -2px;
+}
+
+/* Drop target inside */
+.node-content.drag-target-inside {
+    background: rgba(37, 99, 235, 0.1);
+    box-shadow: inset 0 0 0 2px var(--primary-color);
+    border-radius: 6px;
+}
+
+/* Prevent text selection during drag */
+.node-content[draggable="true"] * {
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+/* Touch drag feedback */
+@media (hover: none) and (pointer: coarse) {
+    .node-content[draggable="true"] {
+        cursor: default;
+    }
+
+    .node.dragging {
+        opacity: 0.5;
+        transform: scale(0.95);
+    }
+}
+

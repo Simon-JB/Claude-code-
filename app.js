@@ -39,9 +39,13 @@ const App = {
                     :all-tags="allTags"
                     :is-transcluded="node.isTranscluded || false"
                     :original-node-id="node.originalNodeId"
+                    :dragging-node="draggingNode"
                     @update="handleUpdate"
                     @show-context-menu="showContextMenu"
                     @remove-tag="handleRemoveTag"
+                    @drag-start="handleDragStart"
+                    @drag-end="handleDragEnd"
+                    @drop-node="handleDropNode"
                 />
             </main>
 
@@ -79,6 +83,9 @@ const App = {
         const selectionToolbarVisible = ref(false);
         const selectionToolbarX = ref(0);
         const selectionToolbarY = ref(0);
+
+        // Drag and Drop
+        const draggingNode = ref(null);
 
         // Computed
         const allTags = computed(() => {
@@ -240,6 +247,65 @@ const App = {
                 node.text = node.text.replace(new RegExp(`#${tag}\\b`, 'g'), '').trim();
                 saveToStorage();
             }
+        }
+
+        // Drag and Drop Handlers
+        function handleDragStart(node) {
+            draggingNode.value = node;
+        }
+
+        function handleDragEnd() {
+            draggingNode.value = null;
+        }
+
+        function handleDropNode({ draggedNode, targetNode, position }) {
+            if (!draggedNode || !targetNode || draggedNode.id === targetNode.id) {
+                return;
+            }
+
+            // Don't allow dropping on special nodes
+            if (targetNode.isTagsRoot || targetNode.isTagNode || draggedNode.isTagsRoot || draggedNode.isTagNode) {
+                return;
+            }
+
+            // Get original nodes if transcluded
+            const sourceNode = draggedNode.isTranscluded ? findOriginalNode(draggedNode.originalNodeId) : draggedNode;
+            const destNode = targetNode.isTranscluded ? findOriginalNode(targetNode.originalNodeId) : targetNode;
+
+            if (!sourceNode || !destNode) return;
+
+            // Remove from current location
+            const sourceInfo = findNodeParent(nodes.value, sourceNode.id);
+            if (!sourceInfo) return;
+
+            // Check if we're trying to drop a node into its own descendant
+            function isDescendant(parent, childId) {
+                if (parent.id === childId) return true;
+                for (const child of parent.children) {
+                    if (isDescendant(child, childId)) return true;
+                }
+                return false;
+            }
+
+            if (isDescendant(sourceNode, destNode.id)) {
+                return; // Can't drop a node into its own descendant
+            }
+
+            sourceInfo.siblings.splice(sourceInfo.index, 1);
+
+            // Add to new location
+            if (position === 'inside') {
+                destNode.children.push(sourceNode);
+                destNode.collapsed = false;
+            } else {
+                const destInfo = findNodeParent(nodes.value, destNode.id);
+                if (destInfo) {
+                    const insertIndex = position === 'before' ? destInfo.index : destInfo.index + 1;
+                    destInfo.siblings.splice(insertIndex, 0, sourceNode);
+                }
+            }
+
+            saveToStorage();
         }
 
         function addRootNode() {
@@ -571,7 +637,11 @@ const App = {
             formatText,
             saveToStorage,
             handleUpdate,
-            handleRemoveTag
+            handleRemoveTag,
+            draggingNode,
+            handleDragStart,
+            handleDragEnd,
+            handleDropNode
         };
     }
 };
@@ -680,10 +750,36 @@ const AppHeader = {
 const OutlinerNode = {
     name: 'OutlinerNode',
     template: `
-        <div class="node" :class="{ 'transcluded-node': isTranscluded, 'tag-node': node.isTagNode, 'tags-root': node.isTagsRoot }" :data-node-id="node.id">
+        <div class="node" :class="{
+            'transcluded-node': isTranscluded,
+            'tag-node': node.isTagNode,
+            'tags-root': node.isTagsRoot,
+            'dragging': isDragging,
+            'drag-over': isDragOver
+        }" :data-node-id="node.id">
+            <div
+                v-if="!node.isTagsRoot && !node.isTagNode && showDropZone === 'before'"
+                class="drop-zone drop-zone-before"
+                @drop.prevent="handleDrop('before')"
+                @dragover.prevent="handleDragOver('before')"
+                @dragleave="handleDragLeave"
+            ></div>
+
             <div
                 class="node-content"
-                :class="{ 'search-highlight': matchesSearch }"
+                :class="{
+                    'search-highlight': matchesSearch,
+                    'drag-target-inside': showDropZone === 'inside'
+                }"
+                :draggable="!node.isTagsRoot && !node.isTagNode && !isTranscluded"
+                @dragstart="handleDragStart"
+                @dragend="handleDragEnd"
+                @dragover.prevent="handleDragOver('inside')"
+                @dragleave="handleDragLeave"
+                @drop.prevent="handleDrop('inside')"
+                @touchstart="handleTouchStart"
+                @touchmove="handleTouchMove"
+                @touchend="handleTouchEnd"
                 @contextmenu="handleContextMenu"
             >
                 <button
@@ -730,6 +826,14 @@ const OutlinerNode = {
             </div>
 
             <div
+                v-if="!node.isTagsRoot && !node.isTagNode && showDropZone === 'after'"
+                class="drop-zone drop-zone-after"
+                @drop.prevent="handleDrop('after')"
+                @dragover.prevent="handleDragOver('after')"
+                @dragleave="handleDragLeave"
+            ></div>
+
+            <div
                 v-if="node.children.length > 0 && !node.collapsed"
                 class="node-children"
             >
@@ -742,15 +846,19 @@ const OutlinerNode = {
                     :all-tags="allTags"
                     :is-transcluded="child.isTranscluded || false"
                     :original-node-id="child.originalNodeId"
+                    :dragging-node="draggingNode"
                     @update="$emit('update', $event)"
                     @show-context-menu="$emit('show-context-menu', $event)"
                     @remove-tag="$emit('remove-tag', $event)"
+                    @drag-start="$emit('drag-start', $event)"
+                    @drag-end="$emit('drag-end')"
+                    @drop-node="$emit('drop-node', $event)"
                 />
             </div>
         </div>
     `,
-    props: ['node', 'allNodes', 'searchQuery', 'allTags', 'isTranscluded', 'originalNodeId'],
-    emits: ['update', 'show-context-menu', 'remove-tag'],
+    props: ['node', 'allNodes', 'searchQuery', 'allTags', 'isTranscluded', 'originalNodeId', 'draggingNode'],
+    emits: ['update', 'show-context-menu', 'remove-tag', 'drag-start', 'drag-end', 'drop-node'],
     setup(props, { emit }) {
         const textDiv = ref(null);
         const autocomplete = ref(null);
@@ -761,6 +869,15 @@ const OutlinerNode = {
         const autocompleteX = ref(0);
         const autocompleteY = ref(0);
         let autocompletePosition = null;
+
+        // Drag and Drop state
+        const isDragging = ref(false);
+        const showDropZone = ref(null); // 'before', 'inside', 'after', or null
+        const isDragOver = ref(false);
+        let touchStartY = 0;
+        let touchStartX = 0;
+        let touchMoveTimeout = null;
+        let dragGhost = null;
 
         const matchesSearch = computed(() => {
             return props.searchQuery && props.node.text.toLowerCase().includes(props.searchQuery);
@@ -897,6 +1014,190 @@ const OutlinerNode = {
 
         function handleBulletTouchMove() {
             clearTimeout(longPressTimer);
+        }
+
+        // Drag and Drop Handlers (Mouse)
+        function handleDragStart(e) {
+            if (props.node.isTagsRoot || props.node.isTagNode || props.isTranscluded) {
+                e.preventDefault();
+                return;
+            }
+
+            isDragging.value = true;
+            emit('drag-start', props.node);
+
+            // Create custom drag ghost
+            if (e.dataTransfer) {
+                e.dataTransfer.effectAllowed = 'move';
+                // Set drag image to a simplified version
+                const dragImage = e.target.cloneNode(true);
+                dragImage.style.opacity = '0.5';
+                dragImage.style.position = 'absolute';
+                dragImage.style.top = '-1000px';
+                document.body.appendChild(dragImage);
+                e.dataTransfer.setDragImage(dragImage, 0, 0);
+                setTimeout(() => document.body.removeChild(dragImage), 0);
+            }
+        }
+
+        function handleDragEnd(e) {
+            isDragging.value = false;
+            showDropZone.value = null;
+            isDragOver.value = false;
+            emit('drag-end');
+        }
+
+        function handleDragOver(position) {
+            if (!props.draggingNode || props.draggingNode.id === props.node.id) {
+                showDropZone.value = null;
+                return;
+            }
+
+            if (props.node.isTagsRoot || props.node.isTagNode) {
+                showDropZone.value = null;
+                return;
+            }
+
+            showDropZone.value = position;
+            isDragOver.value = true;
+        }
+
+        function handleDragLeave(e) {
+            // Only hide if we're actually leaving the node entirely
+            const rect = e.currentTarget.getBoundingClientRect();
+            const x = e.clientX;
+            const y = e.clientY;
+
+            if (x < rect.left || x >= rect.right || y < rect.top || y >= rect.bottom) {
+                showDropZone.value = null;
+                isDragOver.value = false;
+            }
+        }
+
+        function handleDrop(position) {
+            if (!props.draggingNode || props.draggingNode.id === props.node.id) {
+                return;
+            }
+
+            emit('drop-node', {
+                draggedNode: props.draggingNode,
+                targetNode: props.node,
+                position: position
+            });
+
+            showDropZone.value = null;
+            isDragOver.value = false;
+        }
+
+        // Touch Drag Handlers (Mobile)
+        function handleTouchStart(e) {
+            // Don't start drag if touching the text input or bullet
+            if (e.target.classList.contains('node-text') ||
+                e.target.classList.contains('node-bullet') ||
+                e.target.closest('.node-text') ||
+                e.target.closest('.node-bullet')) {
+                return;
+            }
+
+            const touch = e.touches[0];
+            touchStartX = touch.clientX;
+            touchStartY = touch.clientY;
+
+            // Start drag after short delay
+            touchMoveTimeout = setTimeout(() => {
+                if (!props.node.isTagsRoot && !props.node.isTagNode && !props.isTranscluded) {
+                    isDragging.value = true;
+                    emit('drag-start', props.node);
+
+                    // Create visual feedback
+                    createTouchDragGhost(e.currentTarget);
+                }
+            }, 200);
+        }
+
+        function handleTouchMove(e) {
+            if (touchMoveTimeout) {
+                const touch = e.touches[0];
+                const deltaX = Math.abs(touch.clientX - touchStartX);
+                const deltaY = Math.abs(touch.clientY - touchStartY);
+
+                // Cancel if moved too much before timeout
+                if (deltaX > 10 || deltaY > 10) {
+                    clearTimeout(touchMoveTimeout);
+                    touchMoveTimeout = null;
+                }
+            }
+
+            if (isDragging.value && dragGhost) {
+                e.preventDefault();
+                const touch = e.touches[0];
+                dragGhost.style.left = touch.clientX + 'px';
+                dragGhost.style.top = touch.clientY + 'px';
+
+                // Find element under touch
+                dragGhost.style.display = 'none';
+                const elementBelow = document.elementFromPoint(touch.clientX, touch.clientY);
+                dragGhost.style.display = 'block';
+
+                if (elementBelow) {
+                    const nodeContent = elementBelow.closest('.node-content');
+                    if (nodeContent) {
+                        const nodeId = nodeContent.closest('.node').dataset.nodeId;
+                        // Trigger visual feedback for drop zone
+                        const rect = nodeContent.getBoundingClientRect();
+                        const relativeY = touch.clientY - rect.top;
+                        const third = rect.height / 3;
+
+                        if (relativeY < third) {
+                            handleDragOver('before');
+                        } else if (relativeY > third * 2) {
+                            handleDragOver('after');
+                        } else {
+                            handleDragOver('inside');
+                        }
+                    }
+                }
+            }
+        }
+
+        function handleTouchEnd(e) {
+            clearTimeout(touchMoveTimeout);
+            touchMoveTimeout = null;
+
+            if (isDragging.value) {
+                e.preventDefault();
+
+                // Remove ghost
+                if (dragGhost) {
+                    document.body.removeChild(dragGhost);
+                    dragGhost = null;
+                }
+
+                // Find drop target
+                const touch = e.changedTouches[0];
+                const elementBelow = document.elementFromPoint(touch.clientX, touch.clientY);
+
+                if (elementBelow) {
+                    const nodeContent = elementBelow.closest('.node-content');
+                    if (nodeContent && showDropZone.value) {
+                        handleDrop(showDropZone.value);
+                    }
+                }
+
+                isDragging.value = false;
+                showDropZone.value = null;
+                emit('drag-end');
+            }
+        }
+
+        function createTouchDragGhost(element) {
+            dragGhost = element.cloneNode(true);
+            dragGhost.style.position = 'fixed';
+            dragGhost.style.opacity = '0.5';
+            dragGhost.style.pointerEvents = 'none';
+            dragGhost.style.zIndex = '10000';
+            dragGhost.style.width = element.offsetWidth + 'px';
+            document.body.appendChild(dragGhost);
         }
 
         function addChildNode() {
@@ -1102,7 +1403,18 @@ const OutlinerNode = {
             autocompleteFilter,
             autocompleteX,
             autocompleteY,
-            insertTag
+            insertTag,
+            isDragging,
+            showDropZone,
+            isDragOver,
+            handleDragStart,
+            handleDragEnd,
+            handleDragOver,
+            handleDragLeave,
+            handleDrop,
+            handleTouchStart,
+            handleTouchMove,
+            handleTouchEnd
         };
     }
 };
