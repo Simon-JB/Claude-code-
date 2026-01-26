@@ -26,28 +26,6 @@
                     </svg>
                 </button>
             </div>
-            <div class="toolbar">
-                <button id="boldBtn" class="toolbar-btn" title="Bold (Ctrl+B)">
-                    <svg viewBox="0 0 24 24" width="18" height="18">
-                        <path fill="currentColor" d="M13.5,15.5H10V12.5H13.5A1.5,1.5 0 0,1 15,14A1.5,1.5 0 0,1 13.5,15.5M10,6.5H13A1.5,1.5 0 0,1 14.5,8A1.5,1.5 0 0,1 13,9.5H10M15.6,10.79C16.57,10.11 17.25,9 17.25,8C17.25,5.74 15.5,4 13.25,4H7V18H14.04C16.14,18 17.75,16.3 17.75,14.21C17.75,12.69 16.89,11.39 15.6,10.79Z"/>
-                    </svg>
-                </button>
-                <button id="italicBtn" class="toolbar-btn" title="Italic (Ctrl+I)">
-                    <svg viewBox="0 0 24 24" width="18" height="18">
-                        <path fill="currentColor" d="M10,4V7H12.21L8.79,15H6V18H14V15H11.79L15.21,7H18V4H10Z"/>
-                    </svg>
-                </button>
-                <button id="underlineBtn" class="toolbar-btn" title="Underline (Ctrl+U)">
-                    <svg viewBox="0 0 24 24" width="18" height="18">
-                        <path fill="currentColor" d="M5,21H19V19H5V21M12,17A6,6 0 0,0 18,11V3H15.5V11A3.5,3.5 0 0,1 12,14.5A3.5,3.5 0 0,1 8.5,11V3H6V11A6,6 0 0,0 12,17Z"/>
-                    </svg>
-                </button>
-                <button id="strikeBtn" class="toolbar-btn" title="Strikethrough">
-                    <svg viewBox="0 0 24 24" width="18" height="18">
-                        <path fill="currentColor" d="M23,12V14H1V12H23M7.24,7C7.24,6.09 7.5,5.37 8,4.84C8.5,4.31 9.21,4.04 10.1,4.04C10.65,4.04 11.16,4.13 11.63,4.3C12.1,4.47 12.5,4.7 12.81,5C13.12,5.3 13.36,5.65 13.5,6.04C13.66,6.43 13.74,6.86 13.74,7.3H11.5C11.5,6.76 11.35,6.33 11.06,6C10.77,5.67 10.35,5.5 9.79,5.5C9.32,5.5 8.95,5.64 8.68,5.92C8.41,6.2 8.27,6.58 8.27,7.04C8.27,7.48 8.43,7.86 8.74,8.16L7.24,7M12.63,16.2C12.63,16.76 12.45,17.19 12.08,17.5C11.71,17.81 11.22,17.96 10.6,17.96C10.29,17.96 10,17.91 9.73,17.81C9.46,17.71 9.23,17.57 9.04,17.39C8.85,17.21 8.7,17 8.59,16.75C8.5,16.5 8.43,16.22 8.43,15.9H6.19C6.19,16.38 6.28,16.84 6.46,17.27C6.64,17.7 6.9,18.07 7.24,18.39C7.58,18.71 7.99,18.96 8.46,19.14C8.93,19.32 9.45,19.41 10,19.41C10.57,19.41 11.09,19.34 11.56,19.19C12.03,19.04 12.43,18.84 12.76,18.57C13.09,18.3 13.34,18 13.53,17.64C13.72,17.28 13.81,16.88 13.81,16.45C13.81,16 13.73,15.61 13.57,15.27L12.63,16.2Z"/>
-                    </svg>
-                </button>
-            </div>
         </header>
 
         <main id="outliner" class="outliner">
@@ -59,6 +37,29 @@
             <button class="context-menu-item" data-action="addSibling">Add Sibling</button>
             <button class="context-menu-item" data-action="delete">Delete</button>
             <button class="context-menu-item" data-action="zoom">Zoom In</button>
+        </div>
+
+        <div id="selectionToolbar" class="selection-toolbar">
+            <button id="boldBtnSelection" class="selection-toolbar-btn" title="Bold (Ctrl+B)">
+                <svg viewBox="0 0 24 24" width="18" height="18">
+                    <path fill="currentColor" d="M13.5,15.5H10V12.5H13.5A1.5,1.5 0 0,1 15,14A1.5,1.5 0 0,1 13.5,15.5M10,6.5H13A1.5,1.5 0 0,1 14.5,8A1.5,1.5 0 0,1 13,9.5H10M15.6,10.79C16.57,10.11 17.25,9 17.25,8C17.25,5.74 15.5,4 13.25,4H7V18H14.04C16.14,18 17.75,16.3 17.75,14.21C17.75,12.69 16.89,11.39 15.6,10.79Z"/>
+                </svg>
+            </button>
+            <button id="italicBtnSelection" class="selection-toolbar-btn" title="Italic (Ctrl+I)">
+                <svg viewBox="0 0 24 24" width="18" height="18">
+                    <path fill="currentColor" d="M10,4V7H12.21L8.79,15H6V18H14V15H11.79L15.21,7H18V4H10Z"/>
+                </svg>
+            </button>
+            <button id="underlineBtnSelection" class="selection-toolbar-btn" title="Underline (Ctrl+U)">
+                <svg viewBox="0 0 24 24" width="18" height="18">
+                    <path fill="currentColor" d="M5,21H19V19H5V21M12,17A6,6 0 0,0 18,11V3H15.5V11A3.5,3.5 0 0,1 12,14.5A3.5,3.5 0 0,1 8.5,11V3H6V11A6,6 0 0,0 12,17Z"/>
+                </svg>
+            </button>
+            <button id="strikeBtnSelection" class="selection-toolbar-btn" title="Strikethrough">
+                <svg viewBox="0 0 24 24" width="18" height="18">
+                    <path fill="currentColor" d="M23,12V14H1V12H23M7.24,7C7.24,6.09 7.5,5.37 8,4.84C8.5,4.31 9.21,4.04 10.1,4.04C10.65,4.04 11.16,4.13 11.63,4.3C12.1,4.47 12.5,4.7 12.81,5C13.12,5.3 13.36,5.65 13.5,6.04C13.66,6.43 13.74,6.86 13.74,7.3H11.5C11.5,6.76 11.35,6.33 11.06,6C10.77,5.67 10.35,5.5 9.79,5.5C9.32,5.5 8.95,5.64 8.68,5.92C8.41,6.2 8.27,6.58 8.27,7.04C8.27,7.48 8.43,7.86 8.74,8.16L7.24,7M12.63,16.2C12.63,16.76 12.45,17.19 12.08,17.5C11.71,17.81 11.22,17.96 10.6,17.96C10.29,17.96 10,17.91 9.73,17.81C9.46,17.71 9.23,17.57 9.04,17.39C8.85,17.21 8.7,17 8.59,16.75C8.5,16.5 8.43,16.22 8.43,15.9H6.19C6.19,16.38 6.28,16.84 6.46,17.27C6.64,17.7 6.9,18.07 7.24,18.39C7.58,18.71 7.99,18.96 8.46,19.14C8.93,19.32 9.45,19.41 10,19.41C10.57,19.41 11.09,19.34 11.56,19.19C12.03,19.04 12.43,18.84 12.76,18.57C13.09,18.3 13.34,18 13.53,17.64C13.72,17.28 13.81,16.88 13.81,16.45C13.81,16 13.73,15.61 13.57,15.27L12.63,16.2Z"/>
+                </svg>
+            </button>
         </div>
     </div>
 

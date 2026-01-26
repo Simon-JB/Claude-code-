@@ -7,6 +7,7 @@ class InfiniteOutliner {
         this.selectedNode = null;
         this.searchQuery = '';
         this.contextMenuNode = null;
+        this.selectionToolbarVisible = false;
 
         // DOM elements
         this.outlinerEl = document.getElementById('outliner');
@@ -14,6 +15,7 @@ class InfiniteOutliner {
         this.searchInput = document.getElementById('searchInput');
         this.searchPanel = document.getElementById('searchPanel');
         this.contextMenu = document.getElementById('contextMenu');
+        this.selectionToolbar = document.getElementById('selectionToolbar');
 
         this.init();
     }
@@ -81,11 +83,28 @@ class InfiniteOutliner {
             this.render();
         });
 
-        // Formatting buttons
-        document.getElementById('boldBtn').addEventListener('click', () => this.formatText('bold'));
-        document.getElementById('italicBtn').addEventListener('click', () => this.formatText('italic'));
-        document.getElementById('underlineBtn').addEventListener('click', () => this.formatText('underline'));
-        document.getElementById('strikeBtn').addEventListener('click', () => this.formatText('strikeThrough'));
+        // Selection toolbar formatting buttons
+        document.getElementById('boldBtnSelection').addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            this.formatText('bold');
+        });
+        document.getElementById('italicBtnSelection').addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            this.formatText('italic');
+        });
+        document.getElementById('underlineBtnSelection').addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            this.formatText('underline');
+        });
+        document.getElementById('strikeBtnSelection').addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            this.formatText('strikeThrough');
+        });
+
+        // Text selection handler for showing toolbar
+        document.addEventListener('selectionchange', () => {
+            this.handleSelectionChange();
+        });
 
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
@@ -112,10 +131,26 @@ class InfiniteOutliner {
             }
         });
 
-        // Close context menu on click outside
+        // Close menus on click outside
         document.addEventListener('click', (e) => {
             if (!this.contextMenu.contains(e.target)) {
                 this.contextMenu.classList.add('hidden');
+            }
+            if (!this.selectionToolbar.contains(e.target)) {
+                // Don't hide if clicking within a node-text (let selectionchange handle it)
+                const target = e.target;
+                let isNodeText = false;
+                let element = target;
+                while (element && element !== document.body) {
+                    if (element.classList && element.classList.contains('node-text')) {
+                        isNodeText = true;
+                        break;
+                    }
+                    element = element.parentElement;
+                }
+                if (!isNodeText) {
+                    this.hideSelectionToolbar();
+                }
             }
         });
 
@@ -133,6 +168,79 @@ class InfiniteOutliner {
 
     formatText(command) {
         document.execCommand(command, false, null);
+    }
+
+    handleSelectionChange() {
+        const selection = window.getSelection();
+        const selectedText = selection.toString();
+
+        // Hide toolbar if no text is selected or if selection is collapsed
+        if (!selectedText || selection.isCollapsed) {
+            this.hideSelectionToolbar();
+            return;
+        }
+
+        // Check if selection is within a node-text element
+        const anchorNode = selection.anchorNode;
+        const focusNode = selection.focusNode;
+
+        let textElement = null;
+        if (anchorNode) {
+            textElement = anchorNode.nodeType === Node.TEXT_NODE
+                ? anchorNode.parentElement
+                : anchorNode;
+
+            // Walk up to find node-text element
+            while (textElement && !textElement.classList.contains('node-text')) {
+                textElement = textElement.parentElement;
+                if (!textElement || textElement === document.body) {
+                    textElement = null;
+                    break;
+                }
+            }
+        }
+
+        if (!textElement) {
+            this.hideSelectionToolbar();
+            return;
+        }
+
+        // Show and position the toolbar
+        this.showSelectionToolbar(selection);
+    }
+
+    showSelectionToolbar(selection) {
+        const range = selection.getRangeAt(0);
+        const rect = range.getBoundingClientRect();
+
+        // Position toolbar above or below selection based on available space
+        const toolbarHeight = 44; // Approximate height of toolbar
+        const spaceAbove = rect.top;
+        const spaceBelow = window.innerHeight - rect.bottom;
+
+        let top, left;
+
+        if (spaceAbove > toolbarHeight + 10) {
+            // Position above
+            top = rect.top + window.scrollY - toolbarHeight - 8;
+        } else {
+            // Position below
+            top = rect.bottom + window.scrollY + 8;
+        }
+
+        // Center horizontally on selection
+        left = rect.left + window.scrollX + (rect.width / 2);
+
+        this.selectionToolbar.style.top = `${top}px`;
+        this.selectionToolbar.style.left = `${left}px`;
+        this.selectionToolbar.style.transform = 'translateX(-50%)';
+        this.selectionToolbar.classList.add('visible');
+        this.selectionToolbarVisible = true;
+    }
+
+    hideSelectionToolbar() {
+        this.selectionToolbar.classList.remove('visible');
+        this.selectionToolbarVisible = false;
     }
 
     getCurrentNodes() {
@@ -305,10 +413,10 @@ class InfiniteOutliner {
             nodeContent.classList.remove('focused');
         });
 
-        // Context menu (right-click or long-press)
-        let longPressTimer;
+        // Context menu (right-click only - no long-press on text to allow text selection)
         const showContextMenu = (e) => {
             e.preventDefault();
+            e.stopPropagation();
             this.contextMenuNode = node;
             this.contextMenu.classList.remove('hidden');
 
@@ -330,19 +438,22 @@ class InfiniteOutliner {
             }, 0);
         };
 
+        // Right-click context menu on node content
         nodeContent.addEventListener('contextmenu', showContextMenu);
 
-        nodeContent.addEventListener('touchstart', (e) => {
+        // Long-press on bullet for mobile context menu
+        let longPressTimer;
+        bullet.addEventListener('touchstart', (e) => {
             longPressTimer = setTimeout(() => {
                 showContextMenu(e);
             }, 500);
         });
 
-        nodeContent.addEventListener('touchend', () => {
+        bullet.addEventListener('touchend', () => {
             clearTimeout(longPressTimer);
         });
 
-        nodeContent.addEventListener('touchmove', () => {
+        bullet.addEventListener('touchmove', () => {
             clearTimeout(longPressTimer);
         });
 
