@@ -566,3 +566,85 @@ body {
 ::selection {
     background: rgba(37, 99, 235, 0.2);
 }
+
+/* Tag Styles */
+.tags-root .node-text {
+    font-weight: 600;
+    font-size: 17px;
+    color: var(--primary-color);
+}
+
+.tag-node .node-text {
+    font-weight: 500;
+    color: var(--primary-color);
+}
+
+.tags-root .node-text,
+.tag-node .node-text {
+    cursor: default;
+}
+
+.transcluded-node {
+    opacity: 0.9;
+}
+
+.transcluded-node .node-content {
+    background: rgba(37, 99, 235, 0.03);
+    border-left: 2px solid rgba(37, 99, 235, 0.3);
+    padding-left: 10px;
+}
+
+.transcluded-bullet {
+    background: rgba(37, 99, 235, 0.6) !important;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+
+/* Tag Autocomplete */
+.tag-autocomplete {
+    position: fixed;
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    box-shadow: var(--shadow-lg);
+    z-index: 1001;
+    min-width: 150px;
+    max-width: 250px;
+    overflow: hidden;
+    animation: fadeIn 0.15s ease;
+}
+
+.tag-autocomplete-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-size: 14px;
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.tag-autocomplete-item:last-child {
+    border-bottom: none;
+}
+
+.tag-autocomplete-item:hover,
+.tag-autocomplete-item.selected {
+    background: var(--primary-color);
+    color: white;
+}
+
+.tag-autocomplete-item::before {
+    content: '🏷️ ';
+    margin-right: 4px;
+}
+
+/* Readonly nodes (Tags root and tag nodes) */
+.node-text.readonly {
+    cursor: default;
+    user-select: none;
+}
+
+.node-text.readonly:focus {
+    outline: none;
+    background: transparent;
+}
+

@@ -1,12 +1,23 @@
 const { createApp, ref, computed, onMounted, onUnmounted, nextTick, watch } = Vue;
 
+// Helper function to extract tags from text
+function extractTags(text) {
+    const tagRegex = /#([\w-]+)/g;
+    const tags = [];
+    let match;
+    while ((match = tagRegex.exec(text)) !== null) {
+        tags.push(match[1]);
+    }
+    return [...new Set(tags)]; // Remove duplicates
+}
+
 // Main App
 const App = {
     template: `
         <div id="app">
             <AppHeader
                 :current-zoom-path="currentZoomPath"
-                :nodes="nodes"
+                :nodes="allNodesWithTags"
                 :search-query="searchQuery"
                 @update-search="searchQuery = $event"
                 @navigate-breadcrumb="navigateToBreadcrumb"
@@ -25,8 +36,12 @@ const App = {
                     :node="node"
                     :all-nodes="nodes"
                     :search-query="searchQuery"
-                    @update="saveToStorage"
+                    :all-tags="allTags"
+                    :is-transcluded="node.isTranscluded || false"
+                    :original-node-id="node.originalNodeId"
+                    @update="handleUpdate"
                     @show-context-menu="showContextMenu"
+                    @remove-tag="handleRemoveTag"
                 />
             </main>
 
@@ -66,8 +81,79 @@ const App = {
         const selectionToolbarY = ref(0);
 
         // Computed
+        const allTags = computed(() => {
+            const tags = new Set();
+            function collectTags(nodeList) {
+                for (const node of nodeList) {
+                    if (node.tags && node.tags.length > 0) {
+                        node.tags.forEach(tag => tags.add(tag));
+                    }
+                    if (node.children) {
+                        collectTags(node.children);
+                    }
+                }
+            }
+            collectTags(nodes.value);
+            return Array.from(tags).sort();
+        });
+
+        const tagsNode = computed(() => {
+            const tagNodes = {};
+
+            // Create tag nodes and collect tagged nodes
+            allTags.value.forEach(tag => {
+                tagNodes[tag] = {
+                    id: `tag-${tag}`,
+                    text: `#${tag}`,
+                    children: [],
+                    collapsed: false,
+                    isTagNode: true,
+                    tagName: tag
+                };
+            });
+
+            // Find all nodes with tags and create transclusions
+            function findTaggedNodes(nodeList) {
+                for (const node of nodeList) {
+                    if (node.tags && node.tags.length > 0) {
+                        node.tags.forEach(tag => {
+                            if (tagNodes[tag]) {
+                                // Create transcluded reference
+                                tagNodes[tag].children.push({
+                                    ...node,
+                                    isTranscluded: true,
+                                    originalNodeId: node.id,
+                                    id: `transclude-${node.id}-${tag}`,
+                                    children: node.children // Keep children for navigation
+                                });
+                            }
+                        });
+                    }
+                    if (node.children) {
+                        findTaggedNodes(node.children);
+                    }
+                }
+            }
+            findTaggedNodes(nodes.value);
+
+            return {
+                id: 'tags-root',
+                text: '🏷️ Tags',
+                children: Object.values(tagNodes),
+                collapsed: false,
+                isTagsRoot: true
+            };
+        });
+
+        const allNodesWithTags = computed(() => {
+            if (allTags.value.length === 0) {
+                return nodes.value;
+            }
+            return [tagsNode.value, ...nodes.value];
+        });
+
         const currentNodes = computed(() => {
-            let result = nodes.value;
+            let result = allNodesWithTags.value;
             for (const id of currentZoomPath.value) {
                 const node = findNodeById(result, id);
                 if (node) {
@@ -78,22 +164,30 @@ const App = {
         });
 
         // Helper Functions
-        function createNode(text = '', children = []) {
+        function createNode(text = '', children = [], tags = []) {
             return {
                 id: nextId.value++,
                 text: text,
                 children: children,
-                collapsed: false
+                collapsed: false,
+                tags: tags
             };
         }
 
-        function findNodeById(nodeList, id) {
+        function findNodeById(nodeList, id, skipTranscluded = false) {
             for (const node of nodeList) {
+                if (skipTranscluded && node.isTranscluded) {
+                    continue;
+                }
                 if (node.id === id) return node;
-                const found = findNodeById(node.children, id);
+                const found = findNodeById(node.children, id, skipTranscluded);
                 if (found) return found;
             }
             return null;
+        }
+
+        function findOriginalNode(nodeId) {
+            return findNodeById(nodes.value, nodeId, false);
         }
 
         function findNodeParent(nodeList, targetId, parent = null) {
@@ -107,9 +201,50 @@ const App = {
             return null;
         }
 
+        function updateNodeTags(node) {
+            if (!node || node.isTranscluded || node.isTagNode || node.isTagsRoot) {
+                return;
+            }
+
+            const newTags = extractTags(node.text);
+
+            // Update the node's tags
+            const originalNode = findOriginalNode(node.id);
+            if (originalNode) {
+                originalNode.tags = newTags;
+            } else {
+                node.tags = newTags;
+            }
+        }
+
+        function handleUpdate(updatedNode) {
+            // If it's a transcluded node, find and update the original
+            if (updatedNode.isTranscluded && updatedNode.originalNodeId) {
+                const originalNode = findOriginalNode(updatedNode.originalNodeId);
+                if (originalNode) {
+                    // Update the original node's tags
+                    updateNodeTags(originalNode);
+                }
+            } else if (!updatedNode.isTagNode && !updatedNode.isTagsRoot) {
+                updateNodeTags(updatedNode);
+            }
+
+            saveToStorage();
+        }
+
+        function handleRemoveTag({ nodeId, tag }) {
+            const node = findOriginalNode(nodeId);
+            if (node && node.tags) {
+                node.tags = node.tags.filter(t => t !== tag);
+                // Remove tag from text as well
+                node.text = node.text.replace(new RegExp(`#${tag}\\b`, 'g'), '').trim();
+                saveToStorage();
+            }
+        }
+
         function addRootNode() {
             const newNode = createNode('');
-            currentNodes.value.push(newNode);
+            nodes.value.push(newNode);
             saveToStorage();
             nextTick(() => {
                 const nodeEl = document.querySelector(`[data-node-id="${newNode.id}"] .node-text`);
@@ -154,42 +289,62 @@ const App = {
 
             const node = contextMenuNode.value;
 
+            // If transcluded node, operate on original
+            let targetNode = node;
+            if (node.isTranscluded && node.originalNodeId) {
+                targetNode = findOriginalNode(node.originalNodeId);
+            }
+
             switch (action) {
                 case 'addChild':
-                    node.children.push(createNode(''));
-                    node.collapsed = false;
-                    saveToStorage();
-                    nextTick(() => {
-                        const nodeEl = document.querySelector(`[data-node-id="${node.children[node.children.length - 1].id}"] .node-text`);
-                        if (nodeEl) nodeEl.focus();
-                    });
-                    break;
-
-                case 'addSibling':
-                    const info = findNodeParent(nodes.value, node.id);
-                    if (info) {
-                        const newNode = createNode('');
-                        info.siblings.splice(info.index + 1, 0, newNode);
+                    if (!node.isTagsRoot && !node.isTagNode) {
+                        targetNode.children.push(createNode(''));
+                        targetNode.collapsed = false;
                         saveToStorage();
                         nextTick(() => {
-                            const nodeEl = document.querySelector(`[data-node-id="${newNode.id}"] .node-text`);
+                            const nodeEl = document.querySelector(`[data-node-id="${targetNode.children[targetNode.children.length - 1].id}"] .node-text`);
                             if (nodeEl) nodeEl.focus();
                         });
                     }
                     break;
 
-                case 'delete':
-                    if (confirm('Delete this note and all its children?')) {
-                        const deleteInfo = findNodeParent(nodes.value, node.id);
-                        if (deleteInfo) {
-                            deleteInfo.siblings.splice(deleteInfo.index, 1);
+                case 'addSibling':
+                    if (!node.isTagsRoot && !node.isTagNode) {
+                        const info = findNodeParent(nodes.value, targetNode.id);
+                        if (info) {
+                            const newNode = createNode('');
+                            info.siblings.splice(info.index + 1, 0, newNode);
                             saveToStorage();
+                            nextTick(() => {
+                                const nodeEl = document.querySelector(`[data-node-id="${newNode.id}"] .node-text`);
+                                if (nodeEl) nodeEl.focus();
+                            });
+                        }
+                    }
+                    break;
+
+                case 'delete':
+                    if (node.isTranscluded && node.originalNodeId) {
+                        // If deleting a transcluded node, remove the tag from the original
+                        const originalNode = findOriginalNode(node.originalNodeId);
+                        const tagName = contextMenuNode.value.tagName ||
+                                       (node.id.includes('transclude') ? node.id.split('-').pop() : '');
+                        if (originalNode && tagName) {
+                            handleRemoveTag({ nodeId: originalNode.id, tag: tagName });
+                        }
+                    } else if (!node.isTagsRoot && !node.isTagNode) {
+                        if (confirm('Delete this note and all its children?')) {
+                            const deleteInfo = findNodeParent(nodes.value, targetNode.id);
+                            if (deleteInfo) {
+                                deleteInfo.siblings.splice(deleteInfo.index, 1);
+                                saveToStorage();
+                            }
                         }
                     }
                     break;
 
                 case 'zoom':
-                    const path = getPathToNode(nodes.value, node.id);
+                    const path = getPathToNode(allNodesWithTags.value, node.id);
                     if (path) {
                         currentZoomPath.value = path;
                         saveToStorage();
@@ -292,6 +447,19 @@ const App = {
                     nodes.value = parsed.nodes || [];
                     nextId.value = parsed.nextId || 1;
                     currentZoomPath.value = parsed.currentZoomPath || [];
+
+                    // Ensure all nodes have tags array
+                    function ensureTags(nodeList) {
+                        for (const node of nodeList) {
+                            if (!node.tags) {
+                                node.tags = extractTags(node.text);
+                            }
+                            if (node.children) {
+                                ensureTags(node.children);
+                            }
+                        }
+                    }
+                    ensureTags(nodes.value);
                 }
             } catch (e) {
                 console.error('Failed to load from localStorage:', e);
@@ -307,12 +475,13 @@ const App = {
                         createNode('Press Tab to indent, Shift+Tab to outdent', []),
                         createNode('Use Arrow Up/Down to navigate between notes', []),
                         createNode('Use Shift+Arrow Up/Down to reorder notes', []),
+                        createNode('Use #tags to organize your notes! Try #example', ['example']),
                         createNode('Right-click or long-press for more options', []),
                         createNode('Try the search and zoom features!', [
                             createNode('Zoom in to focus on a specific section', []),
                             createNode('Search to find notes quickly', [])
-                        ])
-                    ])
+                        ], [])
+                    ], [])
                 ];
                 saveToStorage();
             }
@@ -387,6 +556,8 @@ const App = {
             currentZoomPath,
             searchQuery,
             currentNodes,
+            allNodesWithTags,
+            allTags,
             addRootNode,
             navigateToBreadcrumb,
             contextMenuVisible,
@@ -398,7 +569,9 @@ const App = {
             selectionToolbarX,
             selectionToolbarY,
             formatText,
-            saveToStorage
+            saveToStorage,
+            handleUpdate,
+            handleRemoveTag
         };
     }
 };
@@ -507,7 +680,7 @@ const AppHeader = {
 const OutlinerNode = {
     name: 'OutlinerNode',
     template: `
-        <div class="node" :data-node-id="node.id">
+        <div class="node" :class="{ 'transcluded-node': isTranscluded, 'tag-node': node.isTagNode, 'tags-root': node.isTagsRoot }" :data-node-id="node.id">
             <div
                 class="node-content"
                 :class="{ 'search-highlight': matchesSearch }"
@@ -525,6 +698,7 @@ const OutlinerNode = {
 
                 <div
                     class="node-bullet"
+                    :class="{ 'transcluded-bullet': isTranscluded }"
                     @click="addChildNode"
                     @touchstart="handleBulletTouchStart"
                     @touchend="handleBulletTouchEnd"
@@ -533,14 +707,26 @@ const OutlinerNode = {
 
                 <div
                     class="node-text"
-                    contenteditable="true"
+                    :class="{ 'readonly': node.isTagsRoot || node.isTagNode }"
+                    :contenteditable="!node.isTagsRoot && !node.isTagNode"
                     :data-placeholder="'Type a note...'"
                     @input="handleInput"
                     @keydown="handleKeyDown"
                     @focus="handleFocus"
                     @blur="handleBlur"
+                    @keyup="handleKeyUp"
                     ref="textDiv"
                 ></div>
+
+                <TagAutocomplete
+                    v-if="showAutocomplete && !node.isTagsRoot && !node.isTagNode"
+                    :tags="allTags"
+                    :filter="autocompleteFilter"
+                    :x="autocompleteX"
+                    :y="autocompleteY"
+                    @select="insertTag"
+                    ref="autocomplete"
+                />
             </div>
 
             <div
@@ -553,18 +739,28 @@ const OutlinerNode = {
                     :node="child"
                     :all-nodes="allNodes"
                     :search-query="searchQuery"
-                    @update="$emit('update')"
+                    :all-tags="allTags"
+                    :is-transcluded="child.isTranscluded || false"
+                    :original-node-id="child.originalNodeId"
+                    @update="$emit('update', $event)"
                     @show-context-menu="$emit('show-context-menu', $event)"
+                    @remove-tag="$emit('remove-tag', $event)"
                 />
             </div>
         </div>
     `,
-    props: ['node', 'allNodes', 'searchQuery'],
-    emits: ['update', 'show-context-menu'],
+    props: ['node', 'allNodes', 'searchQuery', 'allTags', 'isTranscluded', 'originalNodeId'],
+    emits: ['update', 'show-context-menu', 'remove-tag'],
     setup(props, { emit }) {
         const textDiv = ref(null);
+        const autocomplete = ref(null);
         let longPressTimer = null;
         const isFocused = ref(false);
+        const showAutocomplete = ref(false);
+        const autocompleteFilter = ref('');
+        const autocompleteX = ref(0);
+        const autocompleteY = ref(0);
+        let autocompletePosition = null;
 
         const matchesSearch = computed(() => {
             return props.searchQuery && props.node.text.toLowerCase().includes(props.searchQuery);
@@ -579,26 +775,114 @@ const OutlinerNode = {
 
         function toggleCollapse() {
             props.node.collapsed = !props.node.collapsed;
-            emit('update');
+            emit('update', props.node);
         }
 
         function handleInput(e) {
             props.node.text = e.target.innerHTML;
-            emit('update');
+            emit('update', props.node);
+        }
+
+        function handleKeyUp(e) {
+            // Check for # trigger for autocomplete
+            if (!props.node.isTagsRoot && !props.node.isTagNode) {
+                const sel = window.getSelection();
+                if (sel.rangeCount > 0) {
+                    const range = sel.getRangeAt(0);
+                    const textNode = range.startContainer;
+
+                    if (textNode.nodeType === Node.TEXT_NODE) {
+                        const text = textNode.textContent;
+                        const cursorPos = range.startOffset;
+
+                        // Find the last # before cursor
+                        const beforeCursor = text.substring(0, cursorPos);
+                        const match = beforeCursor.match(/#([\w-]*)$/);
+
+                        if (match && e.key !== 'Escape') {
+                            // Show autocomplete
+                            autocompleteFilter.value = match[1];
+                            autocompletePosition = { range, match };
+
+                            // Position autocomplete
+                            const rect = range.getBoundingClientRect();
+                            autocompleteX.value = rect.left;
+                            autocompleteY.value = rect.bottom + window.scrollY + 4;
+                            showAutocomplete.value = true;
+                        } else {
+                            showAutocomplete.value = false;
+                        }
+                    }
+                }
+            }
+
+            // Close on Escape
+            if (e.key === 'Escape') {
+                showAutocomplete.value = false;
+            }
+        }
+
+        function insertTag(tag) {
+            if (autocompletePosition && textDiv.value) {
+                const { range, match } = autocompletePosition;
+                const textNode = range.startContainer;
+
+                if (textNode.nodeType === Node.TEXT_NODE) {
+                    const text = textNode.textContent;
+                    const cursorPos = range.startOffset;
+                    const beforeCursor = text.substring(0, cursorPos);
+                    const afterCursor = text.substring(cursorPos);
+
+                    // Replace the # and partial tag with the complete tag
+                    const newBefore = beforeCursor.replace(/#[\w-]*$/, `#${tag}`);
+                    textNode.textContent = newBefore + afterCursor;
+
+                    // Set cursor after the tag
+                    const newRange = document.createRange();
+                    const sel = window.getSelection();
+                    newRange.setStart(textNode, newBefore.length);
+                    newRange.collapse(true);
+                    sel.removeAllRanges();
+                    sel.addRange(newRange);
+
+                    // Update node
+                    props.node.text = textDiv.value.innerHTML;
+                    emit('update', props.node);
+                }
+
+                showAutocomplete.value = false;
+            }
         }
 
         function handleFocus(e) {
-            isFocused.value = true;
-            e.target.closest('.node-content').classList.add('focused');
+            if (!props.node.isTagsRoot && !props.node.isTagNode) {
+                isFocused.value = true;
+                e.target.closest('.node-content').classList.add('focused');
+            }
         }
 
         function handleBlur(e) {
             isFocused.value = false;
             e.target.closest('.node-content').classList.remove('focused');
+            setTimeout(() => {
+                showAutocomplete.value = false;
+            }, 200);
         }
 
         function handleContextMenu(e) {
-            emit('show-context-menu', { node: props.node, event: e });
+            // Pass the tag name for transcluded nodes
+            let contextNode = props.node;
+            if (props.isTranscluded) {
+                // Extract tag name from parent or ID
+                const parentTagNode = e.target.closest('.tag-node');
+                if (parentTagNode) {
+                    const tagMatch = parentTagNode.textContent.match(/#([\w-]+)/);
+                    if (tagMatch) {
+                        contextNode = { ...props.node, tagName: tagMatch[1] };
+                    }
+                }
+            }
+            emit('show-context-menu', { node: contextNode, event: e });
         }
 
         function handleBulletTouchStart(e) {
@@ -616,20 +900,23 @@ const OutlinerNode = {
         }
 
         function addChildNode() {
-            const newNode = {
-                id: Date.now(),
-                text: '',
-                children: [],
-                collapsed: false
-            };
-            props.node.children.push(newNode);
-            props.node.collapsed = false;
-            emit('update');
+            if (!props.node.isTagsRoot && !props.node.isTagNode) {
+                const newNode = {
+                    id: Date.now(),
+                    text: '',
+                    children: [],
+                    collapsed: false,
+                    tags: []
+                };
+                props.node.children.push(newNode);
+                props.node.collapsed = false;
+                emit('update', props.node);
 
-            nextTick(() => {
-                const nodeEl = document.querySelector(`[data-node-id="${newNode.id}"] .node-text`);
-                if (nodeEl) nodeEl.focus();
-            });
+                nextTick(() => {
+                    const nodeEl = document.querySelector(`[data-node-id="${newNode.id}"] .node-text`);
+                    if (nodeEl) nodeEl.focus();
+                });
+            }
         }
 
         function findNodeParent(nodeList, targetId, parent = null) {
@@ -683,6 +970,22 @@ const OutlinerNode = {
         }
 
         function handleKeyDown(e) {
+            // Close autocomplete on certain keys
+            if (showAutocomplete.value) {
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    showAutocomplete.value = false;
+                    return;
+                } else if (e.key === 'Tab' || e.key === 'Enter') {
+                    // Let autocomplete handle it
+                    if (autocomplete.value && autocomplete.value.handleKeyDown) {
+                        if (autocomplete.value.handleKeyDown(e)) {
+                            return; // Autocomplete handled it
+                        }
+                    }
+                }
+            }
+
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 // Add sibling
@@ -692,10 +995,11 @@ const OutlinerNode = {
                         id: Date.now(),
                         text: '',
                         children: [],
-                        collapsed: false
+                        collapsed: false,
+                        tags: []
                     };
                     info.siblings.splice(info.index + 1, 0, newNode);
-                    emit('update');
+                    emit('update', props.node);
                     focusNode(newNode.id);
                 }
             } else if (e.key === 'Tab') {
@@ -708,7 +1012,7 @@ const OutlinerNode = {
                         if (grandparentInfo) {
                             info.siblings.splice(info.index, 1);
                             grandparentInfo.siblings.splice(grandparentInfo.index + 1, 0, props.node);
-                            emit('update');
+                            emit('update', props.node);
                             focusNode(props.node.id);
                         }
                     }
@@ -720,7 +1024,7 @@ const OutlinerNode = {
                         info.siblings.splice(info.index, 1);
                         prevSibling.children.push(props.node);
                         prevSibling.collapsed = false;
-                        emit('update');
+                        emit('update', props.node);
                         focusNode(props.node.id);
                     }
                 }
@@ -731,7 +1035,7 @@ const OutlinerNode = {
                 if (info) {
                     const prevNode = info.siblings[info.index - 1] || info.siblings[info.index + 1];
                     info.siblings.splice(info.index, 1);
-                    emit('update');
+                    emit('update', props.node);
                     if (prevNode) {
                         focusNode(prevNode.id);
                     }
@@ -745,7 +1049,7 @@ const OutlinerNode = {
                         const temp = info.siblings[info.index - 1];
                         info.siblings[info.index - 1] = info.siblings[info.index];
                         info.siblings[info.index] = temp;
-                        emit('update');
+                        emit('update', props.node);
                         focusNode(props.node.id);
                     }
                 } else {
@@ -765,7 +1069,7 @@ const OutlinerNode = {
                         const temp = info.siblings[info.index + 1];
                         info.siblings[info.index + 1] = info.siblings[info.index];
                         info.siblings[info.index] = temp;
-                        emit('update');
+                        emit('update', props.node);
                         focusNode(props.node.id);
                     }
                 } else {
@@ -781,6 +1085,7 @@ const OutlinerNode = {
 
         return {
             textDiv,
+            autocomplete,
             matchesSearch,
             toggleCollapse,
             handleInput,
@@ -791,6 +1096,83 @@ const OutlinerNode = {
             handleBulletTouchEnd,
             handleBulletTouchMove,
             addChildNode,
+            handleKeyDown,
+            handleKeyUp,
+            showAutocomplete,
+            autocompleteFilter,
+            autocompleteX,
+            autocompleteY,
+            insertTag
+        };
+    }
+};
+
+// TagAutocomplete Component
+const TagAutocomplete = {
+    template: `
+        <div class="tag-autocomplete" :style="{ left: x + 'px', top: y + 'px' }" v-if="filteredTags.length > 0">
+            <div
+                v-for="(tag, index) in filteredTags"
+                :key="tag"
+                class="tag-autocomplete-item"
+                :class="{ selected: index === selectedIndex }"
+                @mousedown.prevent="$emit('select', tag)"
+                @mouseenter="selectedIndex = index"
+            >
+                #{{ tag }}
+            </div>
+        </div>
+    `,
+    props: ['tags', 'filter', 'x', 'y'],
+    emits: ['select'],
+    setup(props, { emit }) {
+        const selectedIndex = ref(0);
+
+        const filteredTags = computed(() => {
+            if (!props.filter) {
+                return props.tags;
+            }
+            const filtered = props.tags.filter(tag =>
+                tag.toLowerCase().startsWith(props.filter.toLowerCase())
+            );
+
+            // Add the current filter as a new tag option if it doesn't exist
+            if (props.filter && !props.tags.includes(props.filter)) {
+                filtered.push(props.filter);
+            }
+
+            return filtered.slice(0, 5); // Limit to 5 suggestions
+        });
+
+        watch(() => props.filter, () => {
+            selectedIndex.value = 0;
+        });
+
+        function handleKeyDown(e) {
+            if (filteredTags.value.length === 0) return false;
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                selectedIndex.value = (selectedIndex.value + 1) % filteredTags.value.length;
+                return true;
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                selectedIndex.value = selectedIndex.value === 0
+                    ? filteredTags.value.length - 1
+                    : selectedIndex.value - 1;
+                return true;
+            } else if (e.key === 'Enter' || e.key === 'Tab') {
+                e.preventDefault();
+                emit('select', filteredTags.value[selectedIndex.value]);
+                return true;
+            }
+
+            return false;
+        }
+
+        return {
+            filteredTags,
+            selectedIndex,
             handleKeyDown
         };
     }
@@ -870,4 +1252,5 @@ app.component('AppHeader', AppHeader);
 app.component('OutlinerNode', OutlinerNode);
 app.component('ContextMenu', ContextMenu);
 app.component('SelectionToolbar', SelectionToolbar);
+app.component('TagAutocomplete', TagAutocomplete);
 app.mount('#app');
