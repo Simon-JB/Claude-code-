@@ -535,7 +535,6 @@ const OutlinerNode = {
                     class="node-text"
                     contenteditable="true"
                     :data-placeholder="'Type a note...'"
-                    v-html="node.text"
                     @input="handleInput"
                     @keydown="handleKeyDown"
                     @focus="handleFocus"
@@ -569,6 +568,13 @@ const OutlinerNode = {
 
         const matchesSearch = computed(() => {
             return props.searchQuery && props.node.text.toLowerCase().includes(props.searchQuery);
+        });
+
+        // Set initial content without v-html binding to avoid cursor issues
+        onMounted(() => {
+            if (textDiv.value && props.node.text) {
+                textDiv.value.innerHTML = props.node.text;
+            }
         });
 
         function toggleCollapse() {
