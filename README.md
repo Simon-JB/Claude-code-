@@ -38,9 +38,28 @@ A mobile-first, responsive note-taking application with infinite nested outlines
 ## Usage
 
 ### Getting Started
-1. Open `index.html` in your browser
+
+**Option 1: Direct File Opening (Simplest)**
+1. Open `index.html` directly in your browser
 2. Start typing in the default note
 3. Press `Enter` to create new notes
+
+**Option 2: Local Web Server (Recommended)**
+For best performance and to avoid any CORS issues:
+```bash
+# Using Python 3
+python3 -m http.server 8000
+
+# Using Python 2
+python -m SimpleHTTPServer 8000
+
+# Using Node.js (with http-server installed)
+npx http-server -p 8000
+
+# Using PHP
+php -S localhost:8000
+```
+Then visit `http://localhost:8000` in your browser.
 
 ### Creating Notes
 - **Add Child**: Click the bullet point (•) next to any note
