@@ -22,6 +22,8 @@ A mobile-first, responsive note-taking application with infinite nested outlines
 - `Tab`: Indent (move note right)
 - `Shift + Tab`: Outdent (move note left)
 - `Backspace` (on empty note): Delete note
+- `Arrow Up/Down`: Navigate between notes
+- `Shift + Arrow Up/Down`: Reorder notes (move up/down)
 - `Ctrl/Cmd + B`: Bold
 - `Ctrl/Cmd + I`: Italic
 - `Ctrl/Cmd + U`: Underline

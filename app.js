@@ -29,6 +29,8 @@ class InfiniteOutliner {
                     this.createNode('Click the bullet point to add a child note', []),
                     this.createNode('Press Enter to create a sibling note', []),
                     this.createNode('Press Tab to indent, Shift+Tab to outdent', []),
+                    this.createNode('Use Arrow Up/Down to navigate between notes', []),
+                    this.createNode('Use Shift+Arrow Up/Down to reorder notes', []),
                     this.createNode('Right-click or long-press for more options', []),
                     this.createNode('Try the search and zoom features!', [
                         this.createNode('Zoom in to focus on a specific section', []),
@@ -277,6 +279,20 @@ class InfiniteOutliner {
             } else if (e.key === 'Backspace' && textDiv.textContent === '') {
                 e.preventDefault();
                 this.deleteNode(node);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (e.shiftKey) {
+                    this.moveNodeUp(node);
+                } else {
+                    this.focusPreviousNode(node);
+                }
+            } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (e.shiftKey) {
+                    this.moveNodeDown(node);
+                } else {
+                    this.focusNextNode(node);
+                }
             }
         });
 
@@ -428,6 +444,132 @@ class InfiniteOutliner {
                 if (prevNode) {
                     const nodeEl = this.outlinerEl.querySelector(`[data-node-id="${prevNode.id}"] .node-text`);
                     if (nodeEl) nodeEl.focus();
+                }
+            }, 0);
+        }
+    }
+
+    // Get all visible nodes in order (respecting collapsed states)
+    getVisibleNodes(nodes = null, result = []) {
+        if (nodes === null) {
+            nodes = this.getCurrentNodes();
+        }
+
+        for (const node of nodes) {
+            result.push(node.id);
+            if (node.children.length > 0 && !node.collapsed) {
+                this.getVisibleNodes(node.children, result);
+            }
+        }
+
+        return result;
+    }
+
+    // Focus the previous visible node
+    focusPreviousNode(currentNode) {
+        const visibleNodes = this.getVisibleNodes();
+        const currentIndex = visibleNodes.indexOf(currentNode.id);
+
+        if (currentIndex > 0) {
+            const prevNodeId = visibleNodes[currentIndex - 1];
+            const prevNode = this.findNodeById(this.nodes, prevNodeId);
+
+            if (prevNode) {
+                setTimeout(() => {
+                    const nodeEl = this.outlinerEl.querySelector(`[data-node-id="${prevNodeId}"] .node-text`);
+                    if (nodeEl) {
+                        nodeEl.focus();
+                        // Place cursor at end
+                        const range = document.createRange();
+                        const sel = window.getSelection();
+                        range.selectNodeContents(nodeEl);
+                        range.collapse(false);
+                        sel.removeAllRanges();
+                        sel.addRange(range);
+                    }
+                }, 0);
+            }
+        }
+    }
+
+    // Focus the next visible node
+    focusNextNode(currentNode) {
+        const visibleNodes = this.getVisibleNodes();
+        const currentIndex = visibleNodes.indexOf(currentNode.id);
+
+        if (currentIndex < visibleNodes.length - 1) {
+            const nextNodeId = visibleNodes[currentIndex + 1];
+            const nextNode = this.findNodeById(this.nodes, nextNodeId);
+
+            if (nextNode) {
+                setTimeout(() => {
+                    const nodeEl = this.outlinerEl.querySelector(`[data-node-id="${nextNodeId}"] .node-text`);
+                    if (nodeEl) {
+                        nodeEl.focus();
+                        // Place cursor at end
+                        const range = document.createRange();
+                        const sel = window.getSelection();
+                        range.selectNodeContents(nodeEl);
+                        range.collapse(false);
+                        sel.removeAllRanges();
+                        sel.addRange(range);
+                    }
+                }, 0);
+            }
+        }
+    }
+
+    // Move node up in its sibling list
+    moveNodeUp(node) {
+        const info = this.findNodeParent(this.nodes, node.id);
+        if (info && info.index > 0) {
+            // Swap with previous sibling
+            const temp = info.siblings[info.index - 1];
+            info.siblings[info.index - 1] = info.siblings[info.index];
+            info.siblings[info.index] = temp;
+
+            this.render();
+
+            // Restore focus
+            setTimeout(() => {
+                const nodeEl = this.outlinerEl.querySelector(`[data-node-id="${node.id}"] .node-text`);
+                if (nodeEl) {
+                    nodeEl.focus();
+                    // Place cursor at end
+                    const range = document.createRange();
+                    const sel = window.getSelection();
+                    range.selectNodeContents(nodeEl);
+                    range.collapse(false);
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+                }
+            }, 0);
+        }
+    }
+
+    // Move node down in its sibling list
+    moveNodeDown(node) {
+        const info = this.findNodeParent(this.nodes, node.id);
+        if (info && info.index < info.siblings.length - 1) {
+            // Swap with next sibling
+            const temp = info.siblings[info.index + 1];
+            info.siblings[info.index + 1] = info.siblings[info.index];
+            info.siblings[info.index] = temp;
+
+            this.render();
+
+            // Restore focus
+            setTimeout(() => {
+                const nodeEl = this.outlinerEl.querySelector(`[data-node-id="${node.id}"] .node-text`);
+                if (nodeEl) {
+                    nodeEl.focus();
+                    // Place cursor at end
+                    const range = document.createRange();
+                    const sel = window.getSelection();
+                    range.selectNodeContents(nodeEl);
+                    range.collapse(false);
+                    sel.removeAllRanges();
+                    sel.addRange(range);
                 }
             }, 0);
         }
