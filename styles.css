@@ -725,3 +725,44 @@ body {
     }
 }
 
+/* Daily Notes Styles */
+.daily-notes-root .node-text {
+    font-weight: 600;
+    font-size: 17px;
+    color: #059669;
+    cursor: default;
+}
+
+.daily-note .node-text {
+    font-weight: 500;
+    color: #047857;
+    cursor: default;
+}
+
+.daily-notes-root .node-text,
+.daily-note .node-text {
+    user-select: none;
+}
+
+.daily-notes-root .node-content {
+    background: rgba(5, 150, 105, 0.05);
+    border-left: 3px solid rgba(5, 150, 105, 0.3);
+    padding-left: 10px;
+}
+
+.daily-note .node-content {
+    background: rgba(4, 120, 87, 0.04);
+    border-left: 2px solid rgba(4, 120, 87, 0.2);
+    padding-left: 10px;
+}
+
+.daily-notes-root .node-bullet,
+.daily-note .node-bullet {
+    background: rgba(5, 150, 105, 0.6);
+}
+
+.daily-notes-root:hover .node-content,
+.daily-note:hover .node-content {
+    background: rgba(5, 150, 105, 0.08);
+}
+

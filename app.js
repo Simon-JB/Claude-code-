@@ -11,13 +11,45 @@ function extractTags(text) {
     return [...new Set(tags)]; // Remove duplicates
 }
 
+// Date utility functions for daily notes
+function getTodayKey() {
+    const date = new Date();
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function formatDateDisplay(dateKey) {
+    const today = getTodayKey();
+    if (dateKey === today) return '📅 Today';
+
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayKey = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+    if (dateKey === yesterdayKey) return '📅 Yesterday';
+
+    // Parse the date
+    const [year, month, day] = dateKey.split('-').map(Number);
+    const date = new Date(year, month - 1, day);
+
+    // Check if it's within the last week
+    const daysDiff = Math.floor((new Date() - date) / (1000 * 60 * 60 * 24));
+    if (daysDiff < 7 && daysDiff > 0) {
+        const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        return `📅 ${weekdays[date.getDay()]}`;
+    }
+
+    // Format as "Mon, Jan 15, 2024"
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    return `📅 ${weekdays[date.getDay()]}, ${months[date.getMonth()]} ${day}, ${year}`;
+}
+
 // Main App
 const App = {
     template: `
         <div id="app">
             <AppHeader
                 :current-zoom-path="currentZoomPath"
-                :nodes="allNodesWithTags"
+                :nodes="allNodesWithSpecial"
                 :search-query="searchQuery"
                 @update-search="searchQuery = $event"
                 @navigate-breadcrumb="navigateToBreadcrumb"
@@ -68,6 +100,7 @@ const App = {
     setup() {
         // State
         const nodes = ref([]);
+        const dailyNotes = ref({}); // Store daily notes by date key
         const currentZoomPath = ref([]);
         const searchQuery = ref('');
         const nextId = ref(1);
@@ -152,15 +185,48 @@ const App = {
             };
         });
 
-        const allNodesWithTags = computed(() => {
-            if (allTags.value.length === 0) {
-                return nodes.value;
+        const dailyNotesNode = computed(() => {
+            // Get all date keys and sort in reverse chronological order
+            const dateKeys = Object.keys(dailyNotes.value).sort().reverse();
+
+            // Create daily note nodes
+            const dailyNoteNodes = dateKeys.map(dateKey => {
+                const noteData = dailyNotes.value[dateKey];
+                return {
+                    id: `daily-${dateKey}`,
+                    text: formatDateDisplay(dateKey),
+                    children: noteData.children || [],
+                    collapsed: noteData.collapsed || false,
+                    isDailyNote: true,
+                    dateKey: dateKey
+                };
+            });
+
+            return {
+                id: 'daily-notes-root',
+                text: '📅 Daily Notes',
+                children: dailyNoteNodes,
+                collapsed: false,
+                isDailyNotesRoot: true
+            };
+        });
+
+        const allNodesWithSpecial = computed(() => {
+            const specialNodes = [];
+
+            // Add Daily Notes at the top
+            specialNodes.push(dailyNotesNode.value);
+
+            // Add Tags if there are any
+            if (allTags.value.length > 0) {
+                specialNodes.push(tagsNode.value);
             }
-            return [tagsNode.value, ...nodes.value];
+
+            return [...specialNodes, ...nodes.value];
         });
 
         const currentNodes = computed(() => {
-            let result = allNodesWithTags.value;
+            let result = allNodesWithSpecial.value;
             for (const id of currentZoomPath.value) {
                 const node = findNodeById(result, id);
                 if (node) {
@@ -179,6 +245,47 @@ const App = {
                 collapsed: false,
                 tags: tags
             };
+        }
+
+        function ensureTodayNote() {
+            const todayKey = getTodayKey();
+            if (!dailyNotes.value[todayKey]) {
+                dailyNotes.value[todayKey] = {
+                    children: [],
+                    collapsed: false
+                };
+                saveToStorage();
+            }
+            return todayKey;
+        }
+
+        function jumpToToday() {
+            const todayKey = ensureTodayNote();
+            const dailyNoteId = `daily-${todayKey}`;
+
+            // Navigate to daily notes root first, then to today
+            currentZoomPath.value = ['daily-notes-root', dailyNoteId];
+            saveToStorage();
+
+            // Focus on first child or create one if empty
+            nextTick(() => {
+                const todayNote = dailyNotes.value[todayKey];
+                if (todayNote.children.length === 0) {
+                    // Add a first node
+                    const newNode = createNode('');
+                    todayNote.children.push(newNode);
+                    saveToStorage();
+                    nextTick(() => {
+                        const nodeEl = document.querySelector(`[data-node-id="${newNode.id}"] .node-text`);
+                        if (nodeEl) nodeEl.focus();
+                    });
+                } else {
+                    // Focus on first node
+                    const firstNodeId = todayNote.children[0].id;
+                    const nodeEl = document.querySelector(`[data-node-id="${firstNodeId}"] .node-text`);
+                    if (nodeEl) nodeEl.focus();
+                }
+            });
         }
 
         function findNodeById(nodeList, id, skipTranscluded = false) {
@@ -264,7 +371,8 @@ const App = {
             }
 
             // Don't allow dropping on special nodes
-            if (targetNode.isTagsRoot || targetNode.isTagNode || draggedNode.isTagsRoot || draggedNode.isTagNode) {
+            if (targetNode.isTagsRoot || targetNode.isTagNode || targetNode.isDailyNotesRoot || targetNode.isDailyNote ||
+                draggedNode.isTagsRoot || draggedNode.isTagNode || draggedNode.isDailyNotesRoot || draggedNode.isDailyNote) {
                 return;
             }
 
@@ -363,19 +471,32 @@ const App = {
 
             switch (action) {
                 case 'addChild':
-                    if (!node.isTagsRoot && !node.isTagNode) {
-                        targetNode.children.push(createNode(''));
-                        targetNode.collapsed = false;
-                        saveToStorage();
-                        nextTick(() => {
-                            const nodeEl = document.querySelector(`[data-node-id="${targetNode.children[targetNode.children.length - 1].id}"] .node-text`);
-                            if (nodeEl) nodeEl.focus();
-                        });
+                    if (!node.isTagsRoot && !node.isTagNode && !node.isDailyNotesRoot) {
+                        // For daily note nodes, add child to the daily note data
+                        if (node.isDailyNote) {
+                            const dateKey = node.dateKey;
+                            const newNode = createNode('');
+                            dailyNotes.value[dateKey].children.push(newNode);
+                            dailyNotes.value[dateKey].collapsed = false;
+                            saveToStorage();
+                            nextTick(() => {
+                                const nodeEl = document.querySelector(`[data-node-id="${newNode.id}"] .node-text`);
+                                if (nodeEl) nodeEl.focus();
+                            });
+                        } else {
+                            targetNode.children.push(createNode(''));
+                            targetNode.collapsed = false;
+                            saveToStorage();
+                            nextTick(() => {
+                                const nodeEl = document.querySelector(`[data-node-id="${targetNode.children[targetNode.children.length - 1].id}"] .node-text`);
+                                if (nodeEl) nodeEl.focus();
+                            });
+                        }
                     }
                     break;
 
                 case 'addSibling':
-                    if (!node.isTagsRoot && !node.isTagNode) {
+                    if (!node.isTagsRoot && !node.isTagNode && !node.isDailyNotesRoot && !node.isDailyNote) {
                         const info = findNodeParent(nodes.value, targetNode.id);
                         if (info) {
                             const newNode = createNode('');
@@ -398,7 +519,7 @@ const App = {
                         if (originalNode && tagName) {
                             handleRemoveTag({ nodeId: originalNode.id, tag: tagName });
                         }
-                    } else if (!node.isTagsRoot && !node.isTagNode) {
+                    } else if (!node.isTagsRoot && !node.isTagNode && !node.isDailyNotesRoot && !node.isDailyNote) {
                         if (confirm('Delete this note and all its children?')) {
                             const deleteInfo = findNodeParent(nodes.value, targetNode.id);
                             if (deleteInfo) {
@@ -410,7 +531,7 @@ const App = {
                     break;
 
                 case 'zoom':
-                    const path = getPathToNode(allNodesWithTags.value, node.id);
+                    const path = getPathToNode(allNodesWithSpecial.value, node.id);
                     if (path) {
                         currentZoomPath.value = path;
                         saveToStorage();
@@ -496,6 +617,7 @@ const App = {
             try {
                 const data = {
                     nodes: nodes.value,
+                    dailyNotes: dailyNotes.value,
                     nextId: nextId.value,
                     currentZoomPath: currentZoomPath.value
                 };
@@ -511,6 +633,7 @@ const App = {
                 if (data) {
                     const parsed = JSON.parse(data);
                     nodes.value = parsed.nodes || [];
+                    dailyNotes.value = parsed.dailyNotes || {};
                     nextId.value = parsed.nextId || 1;
                     currentZoomPath.value = parsed.currentZoomPath || [];
 
@@ -526,6 +649,13 @@ const App = {
                         }
                     }
                     ensureTags(nodes.value);
+
+                    // Ensure all daily notes children have tags
+                    Object.keys(dailyNotes.value).forEach(dateKey => {
+                        if (dailyNotes.value[dateKey].children) {
+                            ensureTags(dailyNotes.value[dateKey].children);
+                        }
+                    });
                 }
             } catch (e) {
                 console.error('Failed to load from localStorage:', e);
@@ -608,6 +738,10 @@ const App = {
                                 searchInput.focus();
                             }
                             break;
+                        case 'd':
+                            e.preventDefault();
+                            jumpToToday();
+                            break;
                     }
                 }
             });
@@ -619,10 +753,11 @@ const App = {
 
         return {
             nodes,
+            dailyNotes,
             currentZoomPath,
             searchQuery,
             currentNodes,
-            allNodesWithTags,
+            allNodesWithSpecial,
             allTags,
             addRootNode,
             navigateToBreadcrumb,
@@ -641,7 +776,8 @@ const App = {
             draggingNode,
             handleDragStart,
             handleDragEnd,
-            handleDropNode
+            handleDropNode,
+            jumpToToday
         };
     }
 };
@@ -754,11 +890,13 @@ const OutlinerNode = {
             'transcluded-node': isTranscluded,
             'tag-node': node.isTagNode,
             'tags-root': node.isTagsRoot,
+            'daily-note': node.isDailyNote,
+            'daily-notes-root': node.isDailyNotesRoot,
             'dragging': isDragging,
             'drag-over': isDragOver
         }" :data-node-id="node.id">
             <div
-                v-if="!node.isTagsRoot && !node.isTagNode && showDropZone === 'before'"
+                v-if="!node.isTagsRoot && !node.isTagNode && !node.isDailyNotesRoot && !node.isDailyNote && showDropZone === 'before'"
                 class="drop-zone drop-zone-before"
                 @drop.prevent="handleDrop('before')"
                 @dragover.prevent="handleDragOver('before')"
@@ -771,7 +909,7 @@ const OutlinerNode = {
                     'search-highlight': matchesSearch,
                     'drag-target-inside': showDropZone === 'inside'
                 }"
-                :draggable="!node.isTagsRoot && !node.isTagNode && !isTranscluded"
+                :draggable="!node.isTagsRoot && !node.isTagNode && !node.isDailyNotesRoot && !node.isDailyNote && !isTranscluded"
                 @dragstart="handleDragStart"
                 @dragend="handleDragEnd"
                 @dragover.prevent="handleDragOver('inside')"
@@ -803,8 +941,8 @@ const OutlinerNode = {
 
                 <div
                     class="node-text"
-                    :class="{ 'readonly': node.isTagsRoot || node.isTagNode }"
-                    :contenteditable="!node.isTagsRoot && !node.isTagNode"
+                    :class="{ 'readonly': node.isTagsRoot || node.isTagNode || node.isDailyNotesRoot || node.isDailyNote }"
+                    :contenteditable="!node.isTagsRoot && !node.isTagNode && !node.isDailyNotesRoot && !node.isDailyNote"
                     :data-placeholder="'Type a note...'"
                     @input="handleInput"
                     @keydown="handleKeyDown"
@@ -815,7 +953,7 @@ const OutlinerNode = {
                 ></div>
 
                 <TagAutocomplete
-                    v-if="showAutocomplete && !node.isTagsRoot && !node.isTagNode"
+                    v-if="showAutocomplete && !node.isTagsRoot && !node.isTagNode && !node.isDailyNotesRoot && !node.isDailyNote"
                     :tags="allTags"
                     :filter="autocompleteFilter"
                     :x="autocompleteX"
@@ -826,7 +964,7 @@ const OutlinerNode = {
             </div>
 
             <div
-                v-if="!node.isTagsRoot && !node.isTagNode && showDropZone === 'after'"
+                v-if="!node.isTagsRoot && !node.isTagNode && !node.isDailyNotesRoot && !node.isDailyNote && showDropZone === 'after'"
                 class="drop-zone drop-zone-after"
                 @drop.prevent="handleDrop('after')"
                 @dragover.prevent="handleDragOver('after')"
@@ -902,7 +1040,7 @@ const OutlinerNode = {
 
         function handleKeyUp(e) {
             // Check for # trigger for autocomplete
-            if (!props.node.isTagsRoot && !props.node.isTagNode) {
+            if (!props.node.isTagsRoot && !props.node.isTagNode && !props.node.isDailyNotesRoot && !props.node.isDailyNote) {
                 const sel = window.getSelection();
                 if (sel.rangeCount > 0) {
                     const range = sel.getRangeAt(0);
@@ -972,7 +1110,7 @@ const OutlinerNode = {
         }
 
         function handleFocus(e) {
-            if (!props.node.isTagsRoot && !props.node.isTagNode) {
+            if (!props.node.isTagsRoot && !props.node.isTagNode && !props.node.isDailyNotesRoot && !props.node.isDailyNote) {
                 isFocused.value = true;
                 e.target.closest('.node-content').classList.add('focused');
             }
@@ -1018,7 +1156,7 @@ const OutlinerNode = {
 
         // Drag and Drop Handlers (Mouse)
         function handleDragStart(e) {
-            if (props.node.isTagsRoot || props.node.isTagNode || props.isTranscluded) {
+            if (props.node.isTagsRoot || props.node.isTagNode || props.node.isDailyNotesRoot || props.node.isDailyNote || props.isTranscluded) {
                 e.preventDefault();
                 return;
             }
@@ -1053,7 +1191,7 @@ const OutlinerNode = {
                 return;
             }
 
-            if (props.node.isTagsRoot || props.node.isTagNode) {
+            if (props.node.isTagsRoot || props.node.isTagNode || props.node.isDailyNotesRoot || props.node.isDailyNote) {
                 showDropZone.value = null;
                 return;
             }
@@ -1105,7 +1243,7 @@ const OutlinerNode = {
 
             // Start drag after short delay
             touchMoveTimeout = setTimeout(() => {
-                if (!props.node.isTagsRoot && !props.node.isTagNode && !props.isTranscluded) {
+                if (!props.node.isTagsRoot && !props.node.isTagNode && !props.node.isDailyNotesRoot && !props.node.isDailyNote && !props.isTranscluded) {
                     isDragging.value = true;
                     emit('drag-start', props.node);
 
@@ -1201,7 +1339,7 @@ const OutlinerNode = {
         }
 
         function addChildNode() {
-            if (!props.node.isTagsRoot && !props.node.isTagNode) {
+            if (!props.node.isTagsRoot && !props.node.isTagNode && !props.node.isDailyNotesRoot) {
                 const newNode = {
                     id: Date.now(),
                     text: '',
