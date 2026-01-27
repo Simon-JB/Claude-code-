@@ -111,6 +111,7 @@ const App = {
         // Collapsed state for special nodes
         const tagsCollapsed = ref(false);
         const dailyNotesCollapsed = ref(false);
+        const tagNodesCollapsed = ref({}); // Track collapsed state for individual tag nodes
 
         // Context Menu
         const contextMenuVisible = ref(false);
@@ -152,7 +153,7 @@ const App = {
                     id: `tag-${tag}`,
                     text: `#${tag}`,
                     children: [],
-                    collapsed: false,
+                    collapsed: tagNodesCollapsed.value[tag] || false,
                     isTagNode: true,
                     tagName: tag
                 };
@@ -346,6 +347,18 @@ const App = {
             }
             if (updatedNode.isDailyNotesRoot) {
                 dailyNotesCollapsed.value = updatedNode.collapsed;
+                saveToStorage();
+                return;
+            }
+            // Handle individual tag nodes
+            if (updatedNode.isTagNode && updatedNode.tagName) {
+                tagNodesCollapsed.value[updatedNode.tagName] = updatedNode.collapsed;
+                saveToStorage();
+                return;
+            }
+            // Handle individual daily note nodes
+            if (updatedNode.isDailyNote && updatedNode.dateKey) {
+                // This is already handled in toggleCollapse
                 saveToStorage();
                 return;
             }
@@ -639,7 +652,8 @@ const App = {
                     nextId: nextId.value,
                     currentZoomPath: currentZoomPath.value,
                     tagsCollapsed: tagsCollapsed.value,
-                    dailyNotesCollapsed: dailyNotesCollapsed.value
+                    dailyNotesCollapsed: dailyNotesCollapsed.value,
+                    tagNodesCollapsed: tagNodesCollapsed.value
                 };
                 localStorage.setItem('infiniteOutliner', JSON.stringify(data));
             } catch (e) {
@@ -658,6 +672,7 @@ const App = {
                     currentZoomPath.value = parsed.currentZoomPath || [];
                     tagsCollapsed.value = parsed.tagsCollapsed || false;
                     dailyNotesCollapsed.value = parsed.dailyNotesCollapsed || false;
+                    tagNodesCollapsed.value = parsed.tagNodesCollapsed || {};
 
                     // Ensure all nodes have tags array
                     function ensureTags(nodeList) {
