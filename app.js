@@ -322,7 +322,7 @@ const App = {
         }
 
         function updateNodeTags(node) {
-            if (!node || node.isTranscluded || node.isTagNode || node.isTagsRoot) {
+            if (!node || node.isTranscluded || node.isTagNode || node.isTagsRoot || node.isDailyNote || node.isDailyNotesRoot) {
                 return;
             }
 
@@ -366,6 +366,9 @@ const App = {
             if (updatedNode.isTranscluded && updatedNode.originalNodeId) {
                 const originalNode = findOriginalNode(updatedNode.originalNodeId);
                 if (originalNode) {
+                    // Sync text content and collapsed state from transcluded to original
+                    originalNode.text = updatedNode.text;
+                    originalNode.collapsed = updatedNode.collapsed;
                     // Update the original node's tags
                     updateNodeTags(originalNode);
                 }
