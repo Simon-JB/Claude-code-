@@ -80,6 +80,7 @@ const App = {
                     @drag-start="handleDragStart"
                     @drag-end="handleDragEnd"
                     @drop-node="handleDropNode"
+                    @zoom-node="handleZoomNode"
                 />
             </main>
 
@@ -396,6 +397,14 @@ const App = {
 
         function handleDragEnd() {
             draggingNode.value = null;
+        }
+
+        function handleZoomNode(node) {
+            const path = getPathToNode(allNodesWithSpecial.value, node.id);
+            if (path) {
+                currentZoomPath.value = path;
+                saveToStorage();
+            }
         }
 
         function handleDropNode({ draggedNode, targetNode, position }) {
@@ -816,6 +825,7 @@ const App = {
             handleDragStart,
             handleDragEnd,
             handleDropNode,
+            handleZoomNode,
             jumpToToday
         };
     }
@@ -979,7 +989,7 @@ const OutlinerNode = {
                 <div
                     class="node-bullet"
                     :class="{ 'transcluded-bullet': isTranscluded }"
-                    @click="addChildNode"
+                    @click="handleBulletClick"
                     @touchstart="handleBulletTouchStart"
                     @touchend="handleBulletTouchEnd"
                     @touchmove="handleBulletTouchMove"
@@ -1038,12 +1048,13 @@ const OutlinerNode = {
                     @drag-start="$emit('drag-start', $event)"
                     @drag-end="$emit('drag-end')"
                     @drop-node="$emit('drop-node', $event)"
+                    @zoom-node="$emit('zoom-node', $event)"
                 />
             </div>
         </div>
     `,
     props: ['node', 'allNodes', 'dailyNotes', 'searchQuery', 'allTags', 'isTranscluded', 'originalNodeId', 'draggingNode'],
-    emits: ['update', 'show-context-menu', 'remove-tag', 'drag-start', 'drag-end', 'drop-node'],
+    emits: ['update', 'show-context-menu', 'remove-tag', 'drag-start', 'drag-end', 'drop-node', 'zoom-node'],
     setup(props, { emit }) {
         const textDiv = ref(null);
         const autocomplete = ref(null);
@@ -1386,6 +1397,12 @@ const OutlinerNode = {
             document.body.appendChild(dragGhost);
         }
 
+        function handleBulletClick(e) {
+            e.stopPropagation();
+            // Emit zoom-node event
+            emit('zoom-node', props.node);
+        }
+
         function addChildNode() {
             if (!props.node.isTagsRoot && !props.node.isTagNode && !props.node.isDailyNotesRoot) {
                 const newNode = {
@@ -1475,12 +1492,78 @@ const OutlinerNode = {
 
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                // Add sibling
+
+                // Get cursor position
+                const selection = window.getSelection();
+                if (!selection.rangeCount) return;
+
+                const range = selection.getRangeAt(0);
+                const textDiv = e.target;
+                const textContent = textDiv.textContent || '';
+
+                // Calculate cursor position in text content
+                let cursorPos = 0;
+                const treeWalker = document.createTreeWalker(
+                    textDiv,
+                    NodeFilter.SHOW_TEXT,
+                    null,
+                    false
+                );
+
+                let currentNode;
+                let foundCursor = false;
+                while (currentNode = treeWalker.nextNode()) {
+                    if (currentNode === range.startContainer) {
+                        cursorPos += range.startOffset;
+                        foundCursor = true;
+                        break;
+                    } else {
+                        cursorPos += currentNode.textContent.length;
+                    }
+                }
+
                 const info = findNodeParent(props.allNodes, props.node.id);
-                if (info) {
+                if (!info) return;
+
+                // Case 1: Cursor at beginning - insert node above
+                if (cursorPos === 0) {
                     const newNode = {
                         id: Date.now(),
                         text: '',
+                        children: [],
+                        collapsed: false,
+                        tags: []
+                    };
+                    info.siblings.splice(info.index, 0, newNode);
+                    emit('update', props.node);
+                    focusNode(newNode.id);
+                }
+                // Case 2: Cursor at end - insert node below
+                else if (cursorPos >= textContent.length) {
+                    const newNode = {
+                        id: Date.now(),
+                        text: '',
+                        children: [],
+                        collapsed: false,
+                        tags: []
+                    };
+                    info.siblings.splice(info.index + 1, 0, newNode);
+                    emit('update', props.node);
+                    focusNode(newNode.id);
+                }
+                // Case 3: Cursor in middle - split the node
+                else {
+                    const beforeCursor = textContent.substring(0, cursorPos);
+                    const afterCursor = textContent.substring(cursorPos);
+
+                    // Update current node with text before cursor
+                    props.node.text = beforeCursor;
+                    textDiv.innerHTML = beforeCursor;
+
+                    // Create new node with text after cursor
+                    const newNode = {
+                        id: Date.now(),
+                        text: afterCursor,
                         children: [],
                         collapsed: false,
                         tags: []
@@ -1579,6 +1662,7 @@ const OutlinerNode = {
             handleFocus,
             handleBlur,
             handleContextMenu,
+            handleBulletClick,
             handleBulletTouchStart,
             handleBulletTouchEnd,
             handleBulletTouchMove,
