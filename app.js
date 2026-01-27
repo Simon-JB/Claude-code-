@@ -88,17 +88,23 @@ const App = {
                     <div class="empty-state-hint">Click below to add your first note</div>
                     <button class="toolbar-btn" style="margin-top: 16px" @click="addRootNode">+ Add Note</button>
                 </div>
-                <template v-else>
-                    <OutlinerNode
-                        v-for="node in currentNodes"
-                        :key="node.id"
-                        :node="node"
+                <RecycleScroller
+                    v-else
+                    class="scroller"
+                    :items="flattenedNodes"
+                    :item-size="48"
+                    key-field="node.id"
+                    v-slot="{ item }"
+                >
+                    <OutlinerNodeFlat
+                        :node="item.node"
+                        :depth="item.depth"
                         :all-nodes="nodes"
                         :daily-notes="dailyNotes"
                         :search-query="searchQuery"
                         :all-tags="allTags"
-                        :is-transcluded="node.isTranscluded || false"
-                        :original-node-id="node.originalNodeId"
+                        :is-transcluded="item.node.isTranscluded || false"
+                        :original-node-id="item.node.originalNodeId"
                         :dragging-node="draggingNode"
                         @update="handleUpdate"
                         @show-context-menu="showContextMenu"
@@ -108,7 +114,7 @@ const App = {
                         @drop-node="handleDropNode"
                         @zoom-node="handleZoomNode"
                     />
-                </template>
+                </RecycleScroller>
             </main>
 
             <ContextMenu
@@ -2468,16 +2474,15 @@ app.component('ContextMenu', ContextMenu);
 app.component('SelectionToolbar', SelectionToolbar);
 app.component('TagAutocomplete', TagAutocomplete);
 
-// Register RecycleScroller if available
-try {
-    if (typeof RecycleScroller !== 'undefined') {
-        app.component('RecycleScroller', RecycleScroller);
-        console.log('RecycleScroller registered successfully');
-    } else {
-        console.warn('RecycleScroller not available - falling back to non-virtual rendering');
-    }
-} catch (e) {
-    console.error('Error registering RecycleScroller:', e);
+// Register vue-virtual-scroller components
+// The UMD build exposes VueVirtualScroller globally
+if (typeof VueVirtualScroller !== 'undefined') {
+    app.component('RecycleScroller', VueVirtualScroller.RecycleScroller);
+    app.component('DynamicScroller', VueVirtualScroller.DynamicScroller);
+    app.component('DynamicScrollerItem', VueVirtualScroller.DynamicScrollerItem);
+    console.log('Virtual scroller registered successfully');
+} else {
+    console.error('VueVirtualScroller not loaded from CDN');
 }
 
 app.mount('#app');
