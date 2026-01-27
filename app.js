@@ -53,6 +53,7 @@ const App = {
                 :search-query="searchQuery"
                 @update-search="searchQuery = $event"
                 @navigate-breadcrumb="navigateToBreadcrumb"
+                @jump-to-today="jumpToToday"
             />
 
             <main id="outliner" class="outliner">
@@ -67,6 +68,7 @@ const App = {
                     :key="node.id"
                     :node="node"
                     :all-nodes="nodes"
+                    :daily-notes="dailyNotes"
                     :search-query="searchQuery"
                     :all-tags="allTags"
                     :is-transcluded="node.isTranscluded || false"
@@ -788,11 +790,18 @@ const AppHeader = {
         <header class="app-header">
             <div class="header-top">
                 <h1>Infinite Outliner</h1>
-                <button @click="toggleSearch" class="icon-btn" aria-label="Toggle search">
-                    <svg viewBox="0 0 24 24" width="20" height="20">
-                        <path fill="currentColor" d="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71,14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z"/>
-                    </svg>
-                </button>
+                <div class="header-buttons">
+                    <button @click="$emit('jump-to-today')" class="icon-btn" aria-label="Jump to today" title="Today (Ctrl+D)">
+                        <svg viewBox="0 0 24 24" width="20" height="20">
+                            <path fill="currentColor" d="M19,19H5V8H19M16,1V3H8V1H6V3H5C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5C21,3.89 20.1,3 19,3H18V1M17,12H12V17H17V12Z"/>
+                        </svg>
+                    </button>
+                    <button @click="toggleSearch" class="icon-btn" aria-label="Toggle search">
+                        <svg viewBox="0 0 24 24" width="20" height="20">
+                            <path fill="currentColor" d="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71,14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z"/>
+                        </svg>
+                    </button>
+                </div>
             </div>
             <nav class="breadcrumbs">
                 <button
@@ -835,7 +844,7 @@ const AppHeader = {
         </header>
     `,
     props: ['currentZoomPath', 'nodes', 'searchQuery'],
-    emits: ['update-search', 'navigate-breadcrumb'],
+    emits: ['update-search', 'navigate-breadcrumb', 'jump-to-today'],
     setup(props) {
         const searchVisible = ref(false);
 
@@ -980,6 +989,7 @@ const OutlinerNode = {
                     :key="child.id"
                     :node="child"
                     :all-nodes="allNodes"
+                    :daily-notes="dailyNotes"
                     :search-query="searchQuery"
                     :all-tags="allTags"
                     :is-transcluded="child.isTranscluded || false"
@@ -995,7 +1005,7 @@ const OutlinerNode = {
             </div>
         </div>
     `,
-    props: ['node', 'allNodes', 'searchQuery', 'allTags', 'isTranscluded', 'originalNodeId', 'draggingNode'],
+    props: ['node', 'allNodes', 'dailyNotes', 'searchQuery', 'allTags', 'isTranscluded', 'originalNodeId', 'draggingNode'],
     emits: ['update', 'show-context-menu', 'remove-tag', 'drag-start', 'drag-end', 'drop-node'],
     setup(props, { emit }) {
         const textDiv = ref(null);
@@ -1023,13 +1033,18 @@ const OutlinerNode = {
 
         // Set initial content without v-html binding to avoid cursor issues
         onMounted(() => {
-            if (textDiv.value && props.node.text) {
+            if (textDiv.value && props.node.text && textDiv.value.innerHTML === '') {
                 textDiv.value.innerHTML = props.node.text;
             }
         });
 
         function toggleCollapse() {
-            props.node.collapsed = !props.node.collapsed;
+            // For daily note nodes, update the dailyNotes ref
+            if (props.node.isDailyNote && props.node.dateKey && props.dailyNotes) {
+                props.dailyNotes[props.node.dateKey].collapsed = !props.dailyNotes[props.node.dateKey].collapsed;
+            } else {
+                props.node.collapsed = !props.node.collapsed;
+            }
             emit('update', props.node);
         }
 

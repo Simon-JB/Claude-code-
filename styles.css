@@ -58,6 +58,11 @@ body {
     margin-bottom: 12px;
 }
 
+.header-buttons {
+    display: flex;
+    gap: 8px;
+}
+
 .app-header h1 {
     font-size: 20px;
     font-weight: 600;
@@ -469,19 +474,19 @@ body {
 }
 
 @media (min-width: 1024px) {
-    #app {
-        max-width: 1200px;
-        margin: 0 auto;
-        box-shadow: var(--shadow-md);
-    }
-
     .outliner {
-        padding: 32px;
+        padding: 32px 48px;
+        max-width: 1400px;
+        margin: 0 auto;
     }
 
     .node-children {
         margin-left: 32px;
         padding-left: 16px;
+    }
+
+    .node-text {
+        font-size: 16px;
     }
 }
 
