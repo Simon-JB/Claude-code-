@@ -476,8 +476,6 @@ body {
 @media (min-width: 1024px) {
     .outliner {
         padding: 32px 48px;
-        max-width: 1400px;
-        margin: 0 auto;
     }
 
     .node-children {

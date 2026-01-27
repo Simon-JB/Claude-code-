@@ -108,6 +108,10 @@ const App = {
         const nextId = ref(1);
         const selectedNode = ref(null);
 
+        // Collapsed state for special nodes
+        const tagsCollapsed = ref(false);
+        const dailyNotesCollapsed = ref(false);
+
         // Context Menu
         const contextMenuVisible = ref(false);
         const contextMenuX = ref(0);
@@ -182,7 +186,7 @@ const App = {
                 id: 'tags-root',
                 text: '🏷️ Tags',
                 children: Object.values(tagNodes),
-                collapsed: false,
+                collapsed: tagsCollapsed.value,
                 isTagsRoot: true
             };
         });
@@ -208,7 +212,7 @@ const App = {
                 id: 'daily-notes-root',
                 text: '📅 Daily Notes',
                 children: dailyNoteNodes,
-                collapsed: false,
+                collapsed: dailyNotesCollapsed.value,
                 isDailyNotesRoot: true
             };
         });
@@ -334,6 +338,18 @@ const App = {
         }
 
         function handleUpdate(updatedNode) {
+            // Handle special root nodes
+            if (updatedNode.isTagsRoot) {
+                tagsCollapsed.value = updatedNode.collapsed;
+                saveToStorage();
+                return;
+            }
+            if (updatedNode.isDailyNotesRoot) {
+                dailyNotesCollapsed.value = updatedNode.collapsed;
+                saveToStorage();
+                return;
+            }
+
             // If it's a transcluded node, find and update the original
             if (updatedNode.isTranscluded && updatedNode.originalNodeId) {
                 const originalNode = findOriginalNode(updatedNode.originalNodeId);
@@ -341,7 +357,7 @@ const App = {
                     // Update the original node's tags
                     updateNodeTags(originalNode);
                 }
-            } else if (!updatedNode.isTagNode && !updatedNode.isTagsRoot) {
+            } else if (!updatedNode.isTagNode && !updatedNode.isTagsRoot && !updatedNode.isDailyNote && !updatedNode.isDailyNotesRoot) {
                 updateNodeTags(updatedNode);
             }
 
@@ -621,7 +637,9 @@ const App = {
                     nodes: nodes.value,
                     dailyNotes: dailyNotes.value,
                     nextId: nextId.value,
-                    currentZoomPath: currentZoomPath.value
+                    currentZoomPath: currentZoomPath.value,
+                    tagsCollapsed: tagsCollapsed.value,
+                    dailyNotesCollapsed: dailyNotesCollapsed.value
                 };
                 localStorage.setItem('infiniteOutliner', JSON.stringify(data));
             } catch (e) {
@@ -638,6 +656,8 @@ const App = {
                     dailyNotes.value = parsed.dailyNotes || {};
                     nextId.value = parsed.nextId || 1;
                     currentZoomPath.value = parsed.currentZoomPath || [];
+                    tagsCollapsed.value = parsed.tagsCollapsed || false;
+                    dailyNotesCollapsed.value = parsed.dailyNotesCollapsed || false;
 
                     // Ensure all nodes have tags array
                     function ensureTags(nodeList) {
