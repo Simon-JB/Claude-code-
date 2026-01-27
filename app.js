@@ -336,6 +336,9 @@ const App = {
             } else {
                 node.tags = newTags;
             }
+
+            // Force Vue reactivity to update transcluded nodes
+            nodes.value = [...nodes.value];
         }
 
         function handleUpdate(updatedNode) {
@@ -372,6 +375,8 @@ const App = {
                     originalNode.collapsed = updatedNode.collapsed;
                     // Update the original node's tags
                     updateNodeTags(originalNode);
+                    // Force Vue reactivity by triggering a reference change
+                    nodes.value = [...nodes.value];
                 }
             } else if (!updatedNode.isTagNode && !updatedNode.isTagsRoot && !updatedNode.isDailyNote && !updatedNode.isDailyNotesRoot) {
                 updateNodeTags(updatedNode);
