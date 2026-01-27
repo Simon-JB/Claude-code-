@@ -198,12 +198,11 @@ const App = {
 
             // Create daily note nodes
             const dailyNoteNodes = dateKeys.map(dateKey => {
-                const noteData = dailyNotes.value[dateKey];
                 return {
                     id: `daily-${dateKey}`,
                     text: formatDateDisplay(dateKey),
-                    children: noteData.children || [],
-                    collapsed: noteData.collapsed || false,
+                    children: dailyNotes.value[dateKey].children || [],
+                    collapsed: dailyNotes.value[dateKey].collapsed || false,
                     isDailyNote: true,
                     dateKey: dateKey
                 };
@@ -357,8 +356,8 @@ const App = {
                 return;
             }
             // Handle individual daily note nodes
-            if (updatedNode.isDailyNote && updatedNode.dateKey) {
-                // This is already handled in toggleCollapse
+            if (updatedNode.isDailyNote && updatedNode.dateKey && dailyNotes.value[updatedNode.dateKey]) {
+                dailyNotes.value[updatedNode.dateKey].collapsed = updatedNode.collapsed;
                 saveToStorage();
                 return;
             }
@@ -1074,12 +1073,8 @@ const OutlinerNode = {
         });
 
         function toggleCollapse() {
-            // For daily note nodes, update the dailyNotes ref
-            if (props.node.isDailyNote && props.node.dateKey && props.dailyNotes) {
-                props.dailyNotes[props.node.dateKey].collapsed = !props.dailyNotes[props.node.dateKey].collapsed;
-            } else {
-                props.node.collapsed = !props.node.collapsed;
-            }
+            // Toggle the collapsed state on the node
+            props.node.collapsed = !props.node.collapsed;
             emit('update', props.node);
         }
 
