@@ -728,6 +728,43 @@ body {
     }
 }
 
+/* Tag Chip Styles */
+.tag-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    margin: 0 2px;
+    background: rgba(37, 99, 235, 0.1);
+    color: var(--primary-color);
+    border-radius: 12px;
+    font-size: 0.9em;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid rgba(37, 99, 235, 0.2);
+}
+
+.tag-chip:hover {
+    background: rgba(37, 99, 235, 0.2);
+    border-color: rgba(37, 99, 235, 0.4);
+    transform: translateY(-1px);
+}
+
+.tag-chip:active {
+    transform: translateY(0);
+    background: rgba(37, 99, 235, 0.25);
+}
+
+.node-text-display {
+    cursor: text;
+}
+
+.node-text-display:empty:before {
+    content: attr(data-placeholder);
+    color: var(--text-secondary);
+    opacity: 0.5;
+}
+
 /* Daily Notes Styles */
 .daily-notes-root .node-text {
     font-weight: 600;

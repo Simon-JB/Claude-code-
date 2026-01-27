@@ -1001,6 +1001,7 @@ const OutlinerNode = {
                 ></div>
 
                 <div
+                    v-if="isFocused"
                     class="node-text"
                     :class="{ 'readonly': node.isTagsRoot || node.isTagNode || node.isDailyNotesRoot || node.isDailyNote }"
                     :contenteditable="!node.isTagsRoot && !node.isTagNode && !node.isDailyNotesRoot && !node.isDailyNote"
@@ -1011,6 +1012,14 @@ const OutlinerNode = {
                     @blur="handleBlur"
                     @keyup="handleKeyUp"
                     ref="textDiv"
+                ></div>
+                <div
+                    v-else
+                    class="node-text node-text-display"
+                    :class="{ 'readonly': node.isTagsRoot || node.isTagNode || node.isDailyNotesRoot || node.isDailyNote }"
+                    :data-placeholder="'Type a note...'"
+                    @click="handleTextClick"
+                    v-html="formattedText"
                 ></div>
 
                 <TagAutocomplete
@@ -1084,11 +1093,19 @@ const OutlinerNode = {
             return props.searchQuery && props.node.text.toLowerCase().includes(props.searchQuery);
         });
 
+        // Parse text to identify tags and create formatted HTML
+        const formattedText = computed(() => {
+            if (!props.node.text) return '';
+
+            // Replace #tags with clickable chips
+            return props.node.text.replace(/#([\w-]+)/g, (match, tag) => {
+                return `<span class="tag-chip" data-tag="${tag}">${match}</span>`;
+            });
+        });
+
         // Set initial content without v-html binding to avoid cursor issues
         onMounted(() => {
-            if (textDiv.value && props.node.text && textDiv.value.innerHTML === '') {
-                textDiv.value.innerHTML = props.node.text;
-            }
+            // Content will be set when focusing, or displayed via formattedText when not focused
         });
 
         function toggleCollapse() {
@@ -1177,6 +1194,31 @@ const OutlinerNode = {
             if (!props.node.isTagsRoot && !props.node.isTagNode && !props.node.isDailyNotesRoot && !props.node.isDailyNote) {
                 isFocused.value = true;
                 e.target.closest('.node-content').classList.add('focused');
+                // Populate contenteditable with current text when focusing
+                nextTick(() => {
+                    if (textDiv.value && props.node.text && textDiv.value.innerHTML !== props.node.text) {
+                        textDiv.value.innerHTML = props.node.text;
+                    }
+                });
+            }
+        }
+
+        function handleTextClick(e) {
+            // Check if a tag chip was clicked
+            const tagChip = e.target.closest('.tag-chip');
+            if (tagChip) {
+                e.stopPropagation();
+                const tagName = tagChip.dataset.tag;
+                const tagNodeId = `tag-${tagName}`;
+                emit('zoom-node', { id: tagNodeId });
+            } else {
+                // Click on regular text - focus the editor
+                isFocused.value = true;
+                nextTick(() => {
+                    if (textDiv.value) {
+                        textDiv.value.focus();
+                    }
+                });
             }
         }
 
@@ -1662,10 +1704,13 @@ const OutlinerNode = {
             textDiv,
             autocomplete,
             matchesSearch,
+            formattedText,
+            isFocused,
             toggleCollapse,
             handleInput,
             handleFocus,
             handleBlur,
+            handleTextClick,
             handleContextMenu,
             handleBulletClick,
             handleBulletTouchStart,
