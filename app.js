@@ -1,5 +1,30 @@
 const { createApp, ref, computed, onMounted, onUnmounted, nextTick, watch } = Vue;
 
+// IndexedDB Setup
+let dbPromise;
+async function initDB() {
+    if (dbPromise) return dbPromise;
+
+    dbPromise = idb.openDB('InfiniteOutliner', 1, {
+        upgrade(db) {
+            // Store for root-level nodes (chunked by top-level node)
+            if (!db.objectStoreNames.contains('nodes')) {
+                db.createObjectStore('nodes', { keyPath: 'id' });
+            }
+            // Store for daily notes
+            if (!db.objectStoreNames.contains('dailyNotes')) {
+                db.createObjectStore('dailyNotes', { keyPath: 'dateKey' });
+            }
+            // Store for app metadata
+            if (!db.objectStoreNames.contains('metadata')) {
+                db.createObjectStore('metadata');
+            }
+        }
+    });
+
+    return dbPromise;
+}
+
 // Helper function to extract tags from text
 function extractTags(text) {
     const tagRegex = /#([\w-]+)/g;
@@ -63,25 +88,33 @@ const App = {
                     <div class="empty-state-hint">Click below to add your first note</div>
                     <button class="toolbar-btn" style="margin-top: 16px" @click="addRootNode">+ Add Note</button>
                 </div>
-                <OutlinerNode
-                    v-for="node in currentNodes"
-                    :key="node.id"
-                    :node="node"
-                    :all-nodes="nodes"
-                    :daily-notes="dailyNotes"
-                    :search-query="searchQuery"
-                    :all-tags="allTags"
-                    :is-transcluded="node.isTranscluded || false"
-                    :original-node-id="node.originalNodeId"
-                    :dragging-node="draggingNode"
-                    @update="handleUpdate"
-                    @show-context-menu="showContextMenu"
-                    @remove-tag="handleRemoveTag"
-                    @drag-start="handleDragStart"
-                    @drag-end="handleDragEnd"
-                    @drop-node="handleDropNode"
-                    @zoom-node="handleZoomNode"
-                />
+                <RecycleScroller
+                    v-else
+                    class="scroller"
+                    :items="flattenedNodes"
+                    :item-size="48"
+                    key-field="node.id"
+                    v-slot="{ item }"
+                >
+                    <OutlinerNodeFlat
+                        :node="item.node"
+                        :depth="item.depth"
+                        :all-nodes="nodes"
+                        :daily-notes="dailyNotes"
+                        :search-query="searchQuery"
+                        :all-tags="allTags"
+                        :is-transcluded="item.node.isTranscluded || false"
+                        :original-node-id="item.node.originalNodeId"
+                        :dragging-node="draggingNode"
+                        @update="handleUpdate"
+                        @show-context-menu="showContextMenu"
+                        @remove-tag="handleRemoveTag"
+                        @drag-start="handleDragStart"
+                        @drag-end="handleDragEnd"
+                        @drop-node="handleDropNode"
+                        @zoom-node="handleZoomNode"
+                    />
+                </RecycleScroller>
             </main>
 
             <ContextMenu
@@ -240,6 +273,23 @@ const App = {
                     result = node.children;
                 }
             }
+            return result;
+        });
+
+        // Flatten tree for virtual scrolling
+        const flattenedNodes = computed(() => {
+            const result = [];
+
+            function flatten(nodeList, depth = 0) {
+                for (const node of nodeList) {
+                    result.push({ node, depth });
+                    if (node.children && node.children.length > 0 && !node.collapsed) {
+                        flatten(node.children, depth + 1);
+                    }
+                }
+            }
+
+            flatten(currentNodes.value);
             return result;
         });
 
@@ -659,29 +709,54 @@ const App = {
             document.execCommand(command, false, null);
         }
 
-        // Storage
-        function saveToStorage() {
-            try {
-                const data = {
-                    nodes: nodes.value,
-                    dailyNotes: dailyNotes.value,
-                    nextId: nextId.value,
-                    currentZoomPath: currentZoomPath.value,
-                    tagsCollapsed: tagsCollapsed.value,
-                    dailyNotesCollapsed: dailyNotesCollapsed.value,
-                    tagNodesCollapsed: tagNodesCollapsed.value
-                };
-                localStorage.setItem('infiniteOutliner', JSON.stringify(data));
-            } catch (e) {
-                console.error('Failed to save to localStorage:', e);
-            }
+        // Storage - IndexedDB with debouncing
+        let saveTimeout;
+        async function saveToStorage() {
+            // Debounce saves
+            clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(async () => {
+                try {
+                    const db = await initDB();
+                    const tx = db.transaction(['nodes', 'dailyNotes', 'metadata'], 'readwrite');
+
+                    // Save each root-level node as a chunk
+                    const nodesStore = tx.objectStore('nodes');
+                    await nodesStore.clear();
+                    for (const node of nodes.value) {
+                        await nodesStore.put(node);
+                    }
+
+                    // Save daily notes
+                    const dailyNotesStore = tx.objectStore('dailyNotes');
+                    await dailyNotesStore.clear();
+                    for (const [dateKey, noteData] of Object.entries(dailyNotes.value)) {
+                        await dailyNotesStore.put({ dateKey, ...noteData });
+                    }
+
+                    // Save metadata
+                    const metadataStore = tx.objectStore('metadata');
+                    await metadataStore.put(nextId.value, 'nextId');
+                    await metadataStore.put(currentZoomPath.value, 'currentZoomPath');
+                    await metadataStore.put(tagsCollapsed.value, 'tagsCollapsed');
+                    await metadataStore.put(dailyNotesCollapsed.value, 'dailyNotesCollapsed');
+                    await metadataStore.put(tagNodesCollapsed.value, 'tagNodesCollapsed');
+
+                    await tx.done;
+                } catch (e) {
+                    console.error('Failed to save to IndexedDB:', e);
+                }
+            }, 300); // Debounce by 300ms
         }
 
-        function loadFromStorage() {
+        async function loadFromStorage() {
             try {
-                const data = localStorage.getItem('infiniteOutliner');
-                if (data) {
-                    const parsed = JSON.parse(data);
+                const db = await initDB();
+
+                // Check for localStorage migration
+                const localData = localStorage.getItem('infiniteOutliner');
+                if (localData) {
+                    console.log('Migrating from localStorage to IndexedDB...');
+                    const parsed = JSON.parse(localData);
                     nodes.value = parsed.nodes || [];
                     dailyNotes.value = parsed.dailyNotes || {};
                     nextId.value = parsed.nextId || 1;
@@ -690,28 +765,54 @@ const App = {
                     dailyNotesCollapsed.value = parsed.dailyNotesCollapsed || false;
                     tagNodesCollapsed.value = parsed.tagNodesCollapsed || {};
 
-                    // Ensure all nodes have tags array
-                    function ensureTags(nodeList) {
-                        for (const node of nodeList) {
-                            if (!node.tags) {
-                                node.tags = extractTags(node.text);
-                            }
-                            if (node.children) {
-                                ensureTags(node.children);
-                            }
+                    // Save to IndexedDB and remove localStorage
+                    await saveToStorage();
+                    localStorage.removeItem('infiniteOutliner');
+                    console.log('Migration complete!');
+                    return;
+                }
+
+                // Load from IndexedDB
+                const nodesData = await db.getAll('nodes');
+                const dailyNotesData = await db.getAll('dailyNotes');
+                const metadata = await db.transaction('metadata').objectStore('metadata');
+
+                nodes.value = nodesData || [];
+
+                // Reconstruct dailyNotes object
+                dailyNotes.value = {};
+                for (const item of (dailyNotesData || [])) {
+                    const { dateKey, ...noteData } = item;
+                    dailyNotes.value[dateKey] = noteData;
+                }
+
+                nextId.value = (await metadata.get('nextId')) || 1;
+                currentZoomPath.value = (await metadata.get('currentZoomPath')) || [];
+                tagsCollapsed.value = (await metadata.get('tagsCollapsed')) || false;
+                dailyNotesCollapsed.value = (await metadata.get('dailyNotesCollapsed')) || false;
+                tagNodesCollapsed.value = (await metadata.get('tagNodesCollapsed')) || {};
+
+                // Ensure all nodes have tags array
+                function ensureTags(nodeList) {
+                    for (const node of nodeList) {
+                        if (!node.tags) {
+                            node.tags = extractTags(node.text);
+                        }
+                        if (node.children) {
+                            ensureTags(node.children);
                         }
                     }
-                    ensureTags(nodes.value);
-
-                    // Ensure all daily notes children have tags
-                    Object.keys(dailyNotes.value).forEach(dateKey => {
-                        if (dailyNotes.value[dateKey].children) {
-                            ensureTags(dailyNotes.value[dateKey].children);
-                        }
-                    });
                 }
+                ensureTags(nodes.value);
+
+                // Ensure all daily notes children have tags
+                Object.keys(dailyNotes.value).forEach(dateKey => {
+                    if (dailyNotes.value[dateKey].children) {
+                        ensureTags(dailyNotes.value[dateKey].children);
+                    }
+                });
             } catch (e) {
-                console.error('Failed to load from localStorage:', e);
+                console.error('Failed to load from IndexedDB:', e);
             }
         }
 
@@ -810,6 +911,7 @@ const App = {
             currentZoomPath,
             searchQuery,
             currentNodes,
+            flattenedNodes,
             allNodesWithSpecial,
             allTags,
             addRootNode,
@@ -1739,6 +1841,491 @@ const OutlinerNode = {
     }
 };
 
+// OutlinerNodeFlat Component (for virtual scrolling)
+const OutlinerNodeFlat = {
+    name: 'OutlinerNodeFlat',
+    template: `
+        <div class="node-flat" :class="{
+            'transcluded-node': isTranscluded,
+            'tag-node': node.isTagNode,
+            'tags-root': node.isTagsRoot,
+            'daily-note': node.isDailyNote,
+            'daily-notes-root': node.isDailyNotesRoot,
+            'dragging': isDragging,
+            'drag-over': isDragOver
+        }" :data-node-id="node.id" :style="{ paddingLeft: (depth * 32) + 'px' }">
+            <div
+                class="node-content"
+                :class="{
+                    'search-highlight': matchesSearch,
+                    'drag-target-inside': showDropZone === 'inside'
+                }"
+                :draggable="!node.isTagsRoot && !node.isTagNode && !node.isDailyNotesRoot && !node.isDailyNote && !isTranscluded"
+                @dragstart="handleDragStart"
+                @dragend="handleDragEnd"
+                @dragover.prevent="handleDragOver('inside')"
+                @dragleave="handleDragLeave"
+                @drop.prevent="handleDrop('inside')"
+                @touchstart="handleTouchStart"
+                @touchmove="handleTouchMove"
+                @touchend="handleTouchEnd"
+                @contextmenu="handleContextMenu"
+            >
+                <button
+                    class="expand-btn"
+                    :class="{ invisible: node.children.length === 0, collapsed: node.collapsed }"
+                    @click="toggleCollapse"
+                >
+                    <svg viewBox="0 0 24 24" width="16" height="16">
+                        <path fill="currentColor" d="M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z"/>
+                    </svg>
+                </button>
+
+                <div
+                    class="node-bullet"
+                    :class="{ 'transcluded-bullet': isTranscluded }"
+                    @click="handleBulletClick"
+                    @touchstart="handleBulletTouchStart"
+                    @touchend="handleBulletTouchEnd"
+                    @touchmove="handleBulletTouchMove"
+                ></div>
+
+                <div
+                    v-if="isFocused"
+                    class="node-text"
+                    :class="{ 'readonly': node.isTagsRoot || node.isTagNode || node.isDailyNotesRoot || node.isDailyNote }"
+                    :contenteditable="!node.isTagsRoot && !node.isTagNode && !node.isDailyNotesRoot && !node.isDailyNote"
+                    :data-placeholder="'Type a note...'"
+                    @input="handleInput"
+                    @keydown="handleKeyDown"
+                    @focus="handleFocus"
+                    @blur="handleBlur"
+                    @keyup="handleKeyUp"
+                    ref="textDiv"
+                ></div>
+                <div
+                    v-else
+                    class="node-text node-text-display"
+                    :class="{ 'readonly': node.isTagsRoot || node.isTagNode || node.isDailyNotesRoot || node.isDailyNote }"
+                    :data-placeholder="'Type a note...'"
+                    @click="handleTextClick"
+                    v-html="formattedText"
+                ></div>
+
+                <TagAutocomplete
+                    v-if="showAutocomplete && !node.isTagsRoot && !node.isTagNode && !node.isDailyNotesRoot && !node.isDailyNote"
+                    :tags="allTags"
+                    :filter="autocompleteFilter"
+                    :x="autocompleteX"
+                    :y="autocompleteY"
+                    @select="insertTag"
+                    ref="autocomplete"
+                />
+            </div>
+        </div>
+    `,
+    props: ['node', 'depth', 'allNodes', 'dailyNotes', 'searchQuery', 'allTags', 'isTranscluded', 'originalNodeId', 'draggingNode'],
+    emits: ['update', 'show-context-menu', 'remove-tag', 'drag-start', 'drag-end', 'drop-node', 'zoom-node'],
+    setup(props, { emit }) {
+        // Reuse the same logic from OutlinerNode
+        const textDiv = ref(null);
+        const autocomplete = ref(null);
+        let longPressTimer = null;
+        const isFocused = ref(false);
+        const showAutocomplete = ref(false);
+        const autocompleteFilter = ref('');
+        const autocompleteX = ref(0);
+        const autocompleteY = ref(0);
+        let autocompletePosition = null;
+
+        // Drag and Drop state
+        const isDragging = ref(false);
+        const showDropZone = ref(null);
+        const isDragOver = ref(false);
+        let touchStartY = 0;
+        let touchStartX = 0;
+        let touchMoveTimeout = null;
+        let dragGhost = null;
+
+        const matchesSearch = computed(() => {
+            return props.searchQuery && props.node.text.toLowerCase().includes(props.searchQuery);
+        });
+
+        const formattedText = computed(() => {
+            if (!props.node.text) return '';
+            return props.node.text.replace(/#([\w-]+)/g, (match, tag) => {
+                return `<span class="tag-chip" data-tag="${tag}">${match}</span>`;
+            });
+        });
+
+        onMounted(() => {
+            // Content will be set when focusing, or displayed via formattedText when not focused
+        });
+
+        function toggleCollapse() {
+            props.node.collapsed = !props.node.collapsed;
+            emit('update', props.node);
+        }
+
+        function handleInput(e) {
+            props.node.text = e.target.innerHTML;
+            emit('update', props.node);
+        }
+
+        function handleKeyUp(e) {
+            if (!props.node.isTagsRoot && !props.node.isTagNode && !props.node.isDailyNotesRoot && !props.node.isDailyNote) {
+                const sel = window.getSelection();
+                if (sel.rangeCount > 0) {
+                    const range = sel.getRangeAt(0);
+                    const textNode = range.startContainer;
+
+                    if (textNode.nodeType === Node.TEXT_NODE) {
+                        const text = textNode.textContent;
+                        const cursorPos = range.startOffset;
+                        const beforeCursor = text.substring(0, cursorPos);
+                        const match = beforeCursor.match(/#([\w-]*)$/);
+
+                        if (match && e.key !== 'Escape') {
+                            autocompleteFilter.value = match[1];
+                            autocompletePosition = { range, match };
+                            const rect = range.getBoundingClientRect();
+                            autocompleteX.value = rect.left;
+                            autocompleteY.value = rect.bottom + window.scrollY + 4;
+                            showAutocomplete.value = true;
+                        } else {
+                            showAutocomplete.value = false;
+                        }
+                    }
+                }
+            }
+
+            if (e.key === 'Escape') {
+                showAutocomplete.value = false;
+            }
+        }
+
+        function insertTag(tag) {
+            if (autocompletePosition && textDiv.value) {
+                const { range, match } = autocompletePosition;
+                const textNode = range.startContainer;
+
+                if (textNode.nodeType === Node.TEXT_NODE) {
+                    const text = textNode.textContent;
+                    const cursorPos = range.startOffset;
+                    const beforeCursor = text.substring(0, cursorPos);
+                    const afterCursor = text.substring(cursorPos);
+                    const newBefore = beforeCursor.replace(/#[\w-]*$/, `#${tag}`);
+                    textNode.textContent = newBefore + afterCursor;
+
+                    const newRange = document.createRange();
+                    const sel = window.getSelection();
+                    newRange.setStart(textNode, newBefore.length);
+                    newRange.collapse(true);
+                    sel.removeAllRanges();
+                    sel.addRange(newRange);
+
+                    props.node.text = textDiv.value.innerHTML;
+                    emit('update', props.node);
+                }
+
+                showAutocomplete.value = false;
+            }
+        }
+
+        function handleFocus(e) {
+            if (!props.node.isTagsRoot && !props.node.isTagNode && !props.node.isDailyNotesRoot && !props.node.isDailyNote) {
+                isFocused.value = true;
+                e.target.closest('.node-content').classList.add('focused');
+                nextTick(() => {
+                    if (textDiv.value && props.node.text && textDiv.value.innerHTML !== props.node.text) {
+                        textDiv.value.innerHTML = props.node.text;
+                    }
+                });
+            }
+        }
+
+        function handleTextClick(e) {
+            const tagChip = e.target.closest('.tag-chip');
+            if (tagChip) {
+                e.stopPropagation();
+                const tagName = tagChip.dataset.tag;
+                const tagNodeId = `tag-${tagName}`;
+                emit('zoom-node', { id: tagNodeId });
+            } else {
+                isFocused.value = true;
+                nextTick(() => {
+                    if (textDiv.value) {
+                        textDiv.value.focus();
+                    }
+                });
+            }
+        }
+
+        function handleBlur(e) {
+            isFocused.value = false;
+            e.target.closest('.node-content').classList.remove('focused');
+            setTimeout(() => {
+                showAutocomplete.value = false;
+            }, 200);
+        }
+
+        function handleContextMenu(e) {
+            let contextNode = props.node;
+            if (props.isTranscluded) {
+                const parentTagNode = e.target.closest('.tag-node');
+                if (parentTagNode) {
+                    const tagMatch = parentTagNode.textContent.match(/#([\w-]+)/);
+                    if (tagMatch) {
+                        contextNode = { ...props.node, tagName: tagMatch[1] };
+                    }
+                }
+            }
+            emit('show-context-menu', { node: contextNode, event: e });
+        }
+
+        function handleBulletTouchStart(e) {
+            longPressTimer = setTimeout(() => {
+                emit('show-context-menu', { node: props.node, event: e });
+            }, 500);
+        }
+
+        function handleBulletTouchEnd() {
+            clearTimeout(longPressTimer);
+        }
+
+        function handleBulletTouchMove() {
+            clearTimeout(longPressTimer);
+        }
+
+        function handleDragStart(e) {
+            if (props.node.isTagsRoot || props.node.isTagNode || props.node.isDailyNotesRoot || props.node.isDailyNote || props.isTranscluded) {
+                e.preventDefault();
+                return;
+            }
+
+            isDragging.value = true;
+            emit('drag-start', props.node);
+
+            if (e.dataTransfer) {
+                e.dataTransfer.effectAllowed = 'move';
+                const dragImage = e.target.cloneNode(true);
+                dragImage.style.opacity = '0.5';
+                dragImage.style.position = 'absolute';
+                dragImage.style.top = '-1000px';
+                document.body.appendChild(dragImage);
+                e.dataTransfer.setDragImage(dragImage, 0, 0);
+                setTimeout(() => document.body.removeChild(dragImage), 0);
+            }
+        }
+
+        function handleDragEnd(e) {
+            isDragging.value = false;
+            showDropZone.value = null;
+            isDragOver.value = false;
+            emit('drag-end');
+        }
+
+        function handleDragOver(position) {
+            if (!props.draggingNode || props.draggingNode.id === props.node.id) {
+                showDropZone.value = null;
+                return;
+            }
+
+            if (props.node.isTagsRoot || props.node.isTagNode || props.node.isDailyNotesRoot || props.node.isDailyNote) {
+                showDropZone.value = null;
+                return;
+            }
+
+            showDropZone.value = position;
+            isDragOver.value = true;
+        }
+
+        function handleDragLeave(e) {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const x = e.clientX;
+            const y = e.clientY;
+
+            if (x < rect.left || x >= rect.right || y < rect.top || y >= rect.bottom) {
+                showDropZone.value = null;
+                isDragOver.value = false;
+            }
+        }
+
+        function handleDrop(position) {
+            if (!props.draggingNode || props.draggingNode.id === props.node.id) {
+                return;
+            }
+
+            emit('drop-node', {
+                draggedNode: props.draggingNode,
+                targetNode: props.node,
+                position: position
+            });
+
+            showDropZone.value = null;
+            isDragOver.value = false;
+        }
+
+        function handleTouchStart(e) {
+            if (e.target.classList.contains('node-text') ||
+                e.target.classList.contains('node-bullet') ||
+                e.target.closest('.node-text') ||
+                e.target.closest('.node-bullet')) {
+                return;
+            }
+
+            const touch = e.touches[0];
+            touchStartX = touch.clientX;
+            touchStartY = touch.clientY;
+
+            touchMoveTimeout = setTimeout(() => {
+                if (!props.node.isTagsRoot && !props.node.isTagNode && !props.node.isDailyNotesRoot && !props.node.isDailyNote && !props.isTranscluded) {
+                    isDragging.value = true;
+                    emit('drag-start', props.node);
+                    createTouchDragGhost(e.currentTarget);
+                }
+            }, 200);
+        }
+
+        function handleTouchMove(e) {
+            if (touchMoveTimeout) {
+                const touch = e.touches[0];
+                const deltaX = Math.abs(touch.clientX - touchStartX);
+                const deltaY = Math.abs(touch.clientY - touchStartY);
+
+                if (deltaX > 10 || deltaY > 10) {
+                    clearTimeout(touchMoveTimeout);
+                    touchMoveTimeout = null;
+                }
+            }
+
+            if (isDragging.value && dragGhost) {
+                e.preventDefault();
+                const touch = e.touches[0];
+                dragGhost.style.left = touch.clientX + 'px';
+                dragGhost.style.top = touch.clientY + 'px';
+
+                dragGhost.style.display = 'none';
+                const elementBelow = document.elementFromPoint(touch.clientX, touch.clientY);
+                dragGhost.style.display = 'block';
+
+                if (elementBelow) {
+                    const nodeContent = elementBelow.closest('.node-content');
+                    if (nodeContent) {
+                        const rect = nodeContent.getBoundingClientRect();
+                        const relativeY = touch.clientY - rect.top;
+                        const third = rect.height / 3;
+
+                        if (relativeY < third) {
+                            handleDragOver('before');
+                        } else if (relativeY > third * 2) {
+                            handleDragOver('after');
+                        } else {
+                            handleDragOver('inside');
+                        }
+                    }
+                }
+            }
+        }
+
+        function handleTouchEnd(e) {
+            clearTimeout(touchMoveTimeout);
+            touchMoveTimeout = null;
+
+            if (isDragging.value) {
+                e.preventDefault();
+
+                if (dragGhost) {
+                    document.body.removeChild(dragGhost);
+                    dragGhost = null;
+                }
+
+                const touch = e.changedTouches[0];
+                const elementBelow = document.elementFromPoint(touch.clientX, touch.clientY);
+
+                if (elementBelow) {
+                    const nodeContent = elementBelow.closest('.node-content');
+                    if (nodeContent && showDropZone.value) {
+                        handleDrop(showDropZone.value);
+                    }
+                }
+
+                isDragging.value = false;
+                showDropZone.value = null;
+                emit('drag-end');
+            }
+        }
+
+        function createTouchDragGhost(element) {
+            dragGhost = element.cloneNode(true);
+            dragGhost.style.position = 'fixed';
+            dragGhost.style.opacity = '0.5';
+            dragGhost.style.pointerEvents = 'none';
+            dragGhost.style.zIndex = '10000';
+            dragGhost.style.width = element.offsetWidth + 'px';
+            document.body.appendChild(dragGhost);
+        }
+
+        function handleBulletClick(e) {
+            e.stopPropagation();
+            emit('zoom-node', props.node);
+        }
+
+        // Simple keyboard handlers (no navigation - handled at list level)
+        function handleKeyDown(e) {
+            // Basic handlers only
+            if (showAutocomplete.value) {
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    showAutocomplete.value = false;
+                    return;
+                }
+            }
+
+            if (e.key === 'Backspace' && e.target.textContent === '') {
+                e.preventDefault();
+                // Delete handled elsewhere
+            }
+        }
+
+        return {
+            textDiv,
+            autocomplete,
+            matchesSearch,
+            formattedText,
+            isFocused,
+            toggleCollapse,
+            handleInput,
+            handleFocus,
+            handleBlur,
+            handleTextClick,
+            handleContextMenu,
+            handleBulletClick,
+            handleBulletTouchStart,
+            handleBulletTouchEnd,
+            handleBulletTouchMove,
+            handleKeyDown,
+            handleKeyUp,
+            showAutocomplete,
+            autocompleteFilter,
+            autocompleteX,
+            autocompleteY,
+            insertTag,
+            isDragging,
+            showDropZone,
+            isDragOver,
+            handleDragStart,
+            handleDragEnd,
+            handleDragOver,
+            handleDragLeave,
+            handleDrop,
+            handleTouchStart,
+            handleTouchMove,
+            handleTouchEnd
+        };
+    }
+};
+
 // TagAutocomplete Component
 const TagAutocomplete = {
     template: `
@@ -1882,7 +2469,14 @@ const SelectionToolbar = {
 const app = createApp(App);
 app.component('AppHeader', AppHeader);
 app.component('OutlinerNode', OutlinerNode);
+app.component('OutlinerNodeFlat', OutlinerNodeFlat);
 app.component('ContextMenu', ContextMenu);
 app.component('SelectionToolbar', SelectionToolbar);
 app.component('TagAutocomplete', TagAutocomplete);
+
+// Register vue-virtual-scroller components
+if (window['vue3-virtual-scroller']) {
+    app.use(window['vue3-virtual-scroller']);
+}
+
 app.mount('#app');

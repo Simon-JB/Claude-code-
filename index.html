@@ -9,15 +9,23 @@
 <body>
     <div id="app"></div>
 
+    <!-- Load external libraries -->
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/idb@7/build/umd.js"></script>
+    <script src="https://unpkg.com/vue3-virtual-scroller@0.2.1/dist/vue3-virtual-scroller.umd.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/vue3-virtual-scroller@0.2.1/dist/vue3-virtual-scroller.css">
+
     <script>
-        // Wait for Vue to load before loading app.js
+        // Wait for all libraries to load before loading app.js
         window.addEventListener('load', function() {
             if (typeof Vue === 'undefined') {
                 console.error('Vue failed to load from CDN. Please check your internet connection.');
                 document.getElementById('app').innerHTML = '<div style="padding: 20px; text-align: center;"><h2>Error: Vue.js failed to load</h2><p>Please check your internet connection and refresh the page.</p></div>';
+            } else if (typeof idb === 'undefined') {
+                console.error('idb failed to load from CDN.');
+                document.getElementById('app').innerHTML = '<div style="padding: 20px; text-align: center;"><h2>Error: IndexedDB library failed to load</h2><p>Please check your internet connection and refresh the page.</p></div>';
             } else {
-                // Load app.js after Vue is confirmed available
+                // Load app.js after all dependencies are confirmed available
                 var script = document.createElement('script');
                 script.src = 'app.js';
                 document.body.appendChild(script);

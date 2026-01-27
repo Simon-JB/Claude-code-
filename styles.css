@@ -214,6 +214,33 @@ body {
     overflow-x: hidden;
     padding: 16px;
     -webkit-overflow-scrolling: touch;
+    position: relative;
+}
+
+/* Virtual Scroller */
+.scroller {
+    height: 100%;
+    width: 100%;
+}
+
+.vue-recycle-scroller__item-wrapper {
+    overflow: visible;
+}
+
+/* Flat Node for Virtual Scrolling */
+.node-flat {
+    margin-bottom: 8px;
+    animation: fadeIn 0.2s ease;
+}
+
+.node-flat .node-content {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px;
+    border-radius: 6px;
+    transition: all 0.2s;
+    position: relative;
 }
 
 /* Node Styles */
