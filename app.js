@@ -525,7 +525,35 @@ const App = {
 
         function addRootNode() {
             const newNode = createNode('');
-            nodes.value.push(newNode);
+
+            // If not zoomed in (at root), add to root nodes
+            if (currentZoomPath.value.length === 0) {
+                nodes.value.push(newNode);
+            } else {
+                // Get the currently zoomed node ID (last in path)
+                const zoomedNodeId = currentZoomPath.value[currentZoomPath.value.length - 1];
+
+                // Check if it's a daily note
+                if (zoomedNodeId.startsWith('daily-')) {
+                    const dateKey = zoomedNodeId.replace('daily-', '');
+                    if (dailyNotes.value[dateKey]) {
+                        if (!dailyNotes.value[dateKey].children) {
+                            dailyNotes.value[dateKey].children = [];
+                        }
+                        dailyNotes.value[dateKey].children.push(newNode);
+                    }
+                } else {
+                    // It's a regular node, find it and add to its children
+                    const zoomedNode = findNodeById(allNodesWithSpecial.value, zoomedNodeId);
+                    if (zoomedNode) {
+                        if (!zoomedNode.children) {
+                            zoomedNode.children = [];
+                        }
+                        zoomedNode.children.push(newNode);
+                    }
+                }
+            }
+
             saveToStorage();
             nextTick(() => {
                 const nodeEl = document.querySelector(`[data-node-id="${newNode.id}"] .node-text`);
