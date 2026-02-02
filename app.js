@@ -1,4 +1,4 @@
-// Verify all required libraries are loaded
+// Verify required libraries are loaded
 if (typeof Vue === 'undefined') {
     console.error('Vue is not loaded!');
     throw new Error('Vue library is required but not loaded');
@@ -7,9 +7,11 @@ if (typeof idb === 'undefined') {
     console.error('idb is not loaded!');
     throw new Error('idb library is required but not loaded');
 }
-if (typeof VueVirtualScroller === 'undefined') {
-    console.error('VueVirtualScroller is not loaded!');
-    throw new Error('VueVirtualScroller library is required but not loaded');
+
+// Virtual scroller is optional - we'll fall back if not available
+const hasVirtualScroller = typeof VueVirtualScroller !== 'undefined';
+if (!hasVirtualScroller) {
+    console.warn('VueVirtualScroller not available - will use non-virtual rendering');
 }
 
 const { createApp, ref, computed, onMounted, onUnmounted, nextTick, watch } = Vue;
@@ -102,23 +104,17 @@ const App = {
                     <div class="empty-state-hint">Click below to add your first note</div>
                     <button class="toolbar-btn" style="margin-top: 16px" @click="addRootNode">+ Add Note</button>
                 </div>
-                <RecycleScroller
-                    v-else
-                    class="scroller"
-                    :items="flattenedNodes"
-                    :item-size="48"
-                    key-field="node.id"
-                    v-slot="{ item }"
-                >
-                    <OutlinerNodeFlat
-                        :node="item.node"
-                        :depth="item.depth"
+                <template v-else>
+                    <OutlinerNode
+                        v-for="node in currentNodes"
+                        :key="node.id"
+                        :node="node"
                         :all-nodes="nodes"
                         :daily-notes="dailyNotes"
                         :search-query="searchQuery"
                         :all-tags="allTags"
-                        :is-transcluded="item.node.isTranscluded || false"
-                        :original-node-id="item.node.originalNodeId"
+                        :is-transcluded="node.isTranscluded || false"
+                        :original-node-id="node.originalNodeId"
                         :dragging-node="draggingNode"
                         @update="handleUpdate"
                         @show-context-menu="showContextMenu"
@@ -128,7 +124,7 @@ const App = {
                         @drop-node="handleDropNode"
                         @zoom-node="handleZoomNode"
                     />
-                </RecycleScroller>
+                </template>
             </main>
 
             <ContextMenu
@@ -2488,15 +2484,15 @@ app.component('ContextMenu', ContextMenu);
 app.component('SelectionToolbar', SelectionToolbar);
 app.component('TagAutocomplete', TagAutocomplete);
 
-// Register vue-virtual-scroller components
+// Register vue-virtual-scroller components (optional)
 // The UMD build exposes VueVirtualScroller globally
 if (typeof VueVirtualScroller !== 'undefined') {
     app.component('RecycleScroller', VueVirtualScroller.RecycleScroller);
     app.component('DynamicScroller', VueVirtualScroller.DynamicScroller);
     app.component('DynamicScrollerItem', VueVirtualScroller.DynamicScrollerItem);
-    console.log('Virtual scroller registered successfully');
+    console.log('✓ Virtual scroller registered - will use optimized rendering');
 } else {
-    console.error('VueVirtualScroller not loaded from CDN');
+    console.warn('⚠ VueVirtualScroller not available - using standard rendering (slower for large trees)');
 }
 
 app.mount('#app');
