@@ -14,7 +14,7 @@ if (!hasVirtualScroller) {
     console.warn('VueVirtualScroller not available - will use non-virtual rendering');
 }
 
-const { createApp, ref, computed, onMounted, onUnmounted, nextTick, watch } = Vue;
+const { createApp, ref, computed, onMounted, onUnmounted, nextTick, watch, toRaw } = Vue;
 
 // IndexedDB Setup
 let dbPromise;
@@ -769,26 +769,27 @@ const App = {
                     const tx = db.transaction(['nodes', 'dailyNotes', 'metadata'], 'readwrite');
 
                     // Save each root-level node as a chunk
+                    // Convert to plain objects to avoid proxy cloning issues
                     const nodesStore = tx.objectStore('nodes');
                     await nodesStore.clear();
                     for (const node of nodes.value) {
-                        await nodesStore.put(node);
+                        await nodesStore.put(JSON.parse(JSON.stringify(toRaw(node))));
                     }
 
                     // Save daily notes
                     const dailyNotesStore = tx.objectStore('dailyNotes');
                     await dailyNotesStore.clear();
                     for (const [dateKey, noteData] of Object.entries(dailyNotes.value)) {
-                        await dailyNotesStore.put({ dateKey, ...noteData });
+                        await dailyNotesStore.put(JSON.parse(JSON.stringify({ dateKey, ...toRaw(noteData) })));
                     }
 
                     // Save metadata
                     const metadataStore = tx.objectStore('metadata');
-                    await metadataStore.put(nextId.value, 'nextId');
-                    await metadataStore.put(currentZoomPath.value, 'currentZoomPath');
-                    await metadataStore.put(tagsCollapsed.value, 'tagsCollapsed');
-                    await metadataStore.put(dailyNotesCollapsed.value, 'dailyNotesCollapsed');
-                    await metadataStore.put(tagNodesCollapsed.value, 'tagNodesCollapsed');
+                    await metadataStore.put(toRaw(nextId.value), 'nextId');
+                    await metadataStore.put(JSON.parse(JSON.stringify(toRaw(currentZoomPath.value))), 'currentZoomPath');
+                    await metadataStore.put(toRaw(tagsCollapsed.value), 'tagsCollapsed');
+                    await metadataStore.put(toRaw(dailyNotesCollapsed.value), 'dailyNotesCollapsed');
+                    await metadataStore.put(JSON.parse(JSON.stringify(toRaw(tagNodesCollapsed.value))), 'tagNodesCollapsed');
 
                     await tx.done;
                     console.log('✓ Saved to IndexedDB');
@@ -806,24 +807,25 @@ const App = {
                 const db = await initDB();
                 const tx = db.transaction(['nodes', 'dailyNotes', 'metadata'], 'readwrite');
 
+                // Convert to plain objects to avoid proxy cloning issues
                 const nodesStore = tx.objectStore('nodes');
                 await nodesStore.clear();
                 for (const node of nodes.value) {
-                    await nodesStore.put(node);
+                    await nodesStore.put(JSON.parse(JSON.stringify(toRaw(node))));
                 }
 
                 const dailyNotesStore = tx.objectStore('dailyNotes');
                 await dailyNotesStore.clear();
                 for (const [dateKey, noteData] of Object.entries(dailyNotes.value)) {
-                    await dailyNotesStore.put({ dateKey, ...noteData });
+                    await dailyNotesStore.put(JSON.parse(JSON.stringify({ dateKey, ...toRaw(noteData) })));
                 }
 
                 const metadataStore = tx.objectStore('metadata');
-                await metadataStore.put(nextId.value, 'nextId');
-                await metadataStore.put(currentZoomPath.value, 'currentZoomPath');
-                await metadataStore.put(tagsCollapsed.value, 'tagsCollapsed');
-                await metadataStore.put(dailyNotesCollapsed.value, 'dailyNotesCollapsed');
-                await metadataStore.put(tagNodesCollapsed.value, 'tagNodesCollapsed');
+                await metadataStore.put(toRaw(nextId.value), 'nextId');
+                await metadataStore.put(JSON.parse(JSON.stringify(toRaw(currentZoomPath.value))), 'currentZoomPath');
+                await metadataStore.put(toRaw(tagsCollapsed.value), 'tagsCollapsed');
+                await metadataStore.put(toRaw(dailyNotesCollapsed.value), 'dailyNotesCollapsed');
+                await metadataStore.put(JSON.parse(JSON.stringify(toRaw(tagNodesCollapsed.value))), 'tagNodesCollapsed');
 
                 await tx.done;
                 console.log('✓ Immediate save complete');
@@ -1104,7 +1106,7 @@ const AppHeader = {
         </header>
     `,
     props: ['currentZoomPath', 'nodes', 'searchQuery'],
-    emits: ['update-search', 'navigate-breadcrumb', 'jump-to-today'],
+    emits: ['update-search', 'navigate-breadcrumb', 'jump-to-today', 'add-note'],
     setup(props) {
         const searchVisible = ref(false);
 
