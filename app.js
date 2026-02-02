@@ -726,6 +726,7 @@ const App = {
             clearTimeout(saveTimeout);
             saveTimeout = setTimeout(async () => {
                 try {
+                    console.log('💾 Saving to IndexedDB...');
                     const db = await initDB();
                     const tx = db.transaction(['nodes', 'dailyNotes', 'metadata'], 'readwrite');
 
@@ -752,10 +753,45 @@ const App = {
                     await metadataStore.put(tagNodesCollapsed.value, 'tagNodesCollapsed');
 
                     await tx.done;
+                    console.log('✓ Saved to IndexedDB');
                 } catch (e) {
                     console.error('Failed to save to IndexedDB:', e);
                 }
             }, 300); // Debounce by 300ms
+        }
+
+        // Immediate save without debounce (for critical operations)
+        async function saveToStorageImmediate() {
+            clearTimeout(saveTimeout); // Cancel any pending debounced save
+            try {
+                console.log('💾 Immediate save to IndexedDB...');
+                const db = await initDB();
+                const tx = db.transaction(['nodes', 'dailyNotes', 'metadata'], 'readwrite');
+
+                const nodesStore = tx.objectStore('nodes');
+                await nodesStore.clear();
+                for (const node of nodes.value) {
+                    await nodesStore.put(node);
+                }
+
+                const dailyNotesStore = tx.objectStore('dailyNotes');
+                await dailyNotesStore.clear();
+                for (const [dateKey, noteData] of Object.entries(dailyNotes.value)) {
+                    await dailyNotesStore.put({ dateKey, ...noteData });
+                }
+
+                const metadataStore = tx.objectStore('metadata');
+                await metadataStore.put(nextId.value, 'nextId');
+                await metadataStore.put(currentZoomPath.value, 'currentZoomPath');
+                await metadataStore.put(tagsCollapsed.value, 'tagsCollapsed');
+                await metadataStore.put(dailyNotesCollapsed.value, 'dailyNotesCollapsed');
+                await metadataStore.put(tagNodesCollapsed.value, 'tagNodesCollapsed');
+
+                await tx.done;
+                console.log('✓ Immediate save complete');
+            } catch (e) {
+                console.error('Failed immediate save to IndexedDB:', e);
+            }
         }
 
         async function loadFromStorage() {
@@ -783,6 +819,7 @@ const App = {
                 }
 
                 // Load from IndexedDB
+                console.log('📂 Loading from IndexedDB...');
                 const nodesData = await db.getAll('nodes');
                 const dailyNotesData = await db.getAll('dailyNotes');
                 const metadata = await db.transaction('metadata').objectStore('metadata');
@@ -801,6 +838,8 @@ const App = {
                 tagsCollapsed.value = (await metadata.get('tagsCollapsed')) || false;
                 dailyNotesCollapsed.value = (await metadata.get('dailyNotesCollapsed')) || false;
                 tagNodesCollapsed.value = (await metadata.get('tagNodesCollapsed')) || {};
+
+                console.log(`✓ Loaded ${nodesData.length} root nodes from IndexedDB`);
 
                 // Ensure all nodes have tags array
                 function ensureTags(nodeList) {
@@ -851,6 +890,19 @@ const App = {
         onMounted(() => {
             loadFromStorage();
             initializeDefaultNodes();
+
+            // Save before page unload to prevent data loss
+            window.addEventListener('beforeunload', (e) => {
+                // Try to save immediately (may not complete if browser closes too fast)
+                saveToStorageImmediate();
+            });
+
+            // Save when tab becomes hidden (more reliable than beforeunload)
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden) {
+                    saveToStorageImmediate();
+                }
+            });
 
             document.addEventListener('selectionchange', handleSelectionChange);
             document.addEventListener('click', (e) => {
