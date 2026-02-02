@@ -95,14 +95,14 @@ const App = {
                 @update-search="searchQuery = $event"
                 @navigate-breadcrumb="navigateToBreadcrumb"
                 @jump-to-today="jumpToToday"
+                @add-note="addRootNode"
             />
 
             <main id="outliner" class="outliner">
-                <div v-if="currentNodes.length === 0" class="empty-state">
+                <div v-if="isEmptyState" class="empty-state">
                     <div class="empty-state-icon">📝</div>
                     <div class="empty-state-text">No notes yet</div>
-                    <div class="empty-state-hint">Click below to add your first note</div>
-                    <button class="toolbar-btn" style="margin-top: 16px" @click="addRootNode">+ Add Note</button>
+                    <div class="empty-state-hint">Click the + button above to add your first note</div>
                 </div>
                 <template v-else>
                     <OutlinerNode
@@ -284,6 +284,16 @@ const App = {
                 }
             }
             return result;
+        });
+
+        // Check if we should show empty state
+        const isEmptyState = computed(() => {
+            // If at root level, check if there are no user nodes (ignore special nodes)
+            if (currentZoomPath.value.length === 0) {
+                return nodes.value.length === 0;
+            }
+            // If zoomed in, check if current view has no children
+            return currentNodes.value.length === 0;
         });
 
         // Flatten tree for virtual scrolling
@@ -1001,6 +1011,7 @@ const App = {
             currentZoomPath,
             searchQuery,
             currentNodes,
+            isEmptyState,
             flattenedNodes,
             allNodesWithSpecial,
             allTags,
@@ -1035,6 +1046,11 @@ const AppHeader = {
             <div class="header-top">
                 <h1>Infinite Outliner</h1>
                 <div class="header-buttons">
+                    <button @click="$emit('add-note')" class="icon-btn" aria-label="Add new note" title="Add Note">
+                        <svg viewBox="0 0 24 24" width="20" height="20">
+                            <path fill="currentColor" d="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z"/>
+                        </svg>
+                    </button>
                     <button @click="$emit('jump-to-today')" class="icon-btn" aria-label="Jump to today" title="Today (Ctrl+D)">
                         <svg viewBox="0 0 24 24" width="20" height="20">
                             <path fill="currentColor" d="M19,19H5V8H19M16,1V3H8V1H6V3H5C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5C21,3.89 20.1,3 19,3H18V1M17,12H12V17H17V12Z"/>
