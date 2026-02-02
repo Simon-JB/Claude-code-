@@ -551,6 +551,8 @@ const App = {
                             dailyNotes.value[dateKey].children = [];
                         }
                         dailyNotes.value[dateKey].children.push(newNode);
+                        // Force reactivity update
+                        dailyNotes.value = { ...dailyNotes.value };
                     }
                 } else {
                     // It's a regular node, find it and add to its children
@@ -560,14 +562,27 @@ const App = {
                             zoomedNode.children = [];
                         }
                         zoomedNode.children.push(newNode);
+                        // Force reactivity update
+                        nodes.value = [...nodes.value];
                     }
                 }
             }
 
             saveToStorage();
+
+            // Focus the new node with retries
             nextTick(() => {
-                const nodeEl = document.querySelector(`[data-node-id="${newNode.id}"] .node-text`);
-                if (nodeEl) nodeEl.focus();
+                let attempts = 0;
+                const tryFocus = () => {
+                    const nodeEl = document.querySelector(`[data-node-id="${newNode.id}"] .node-text`);
+                    if (nodeEl) {
+                        nodeEl.focus();
+                    } else if (attempts < 5) {
+                        attempts++;
+                        setTimeout(tryFocus, 50);
+                    }
+                };
+                tryFocus();
             });
         }
 
