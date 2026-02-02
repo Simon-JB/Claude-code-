@@ -1,3 +1,17 @@
+// Verify all required libraries are loaded
+if (typeof Vue === 'undefined') {
+    console.error('Vue is not loaded!');
+    throw new Error('Vue library is required but not loaded');
+}
+if (typeof idb === 'undefined') {
+    console.error('idb is not loaded!');
+    throw new Error('idb library is required but not loaded');
+}
+if (typeof VueVirtualScroller === 'undefined') {
+    console.error('VueVirtualScroller is not loaded!');
+    throw new Error('VueVirtualScroller library is required but not loaded');
+}
+
 const { createApp, ref, computed, onMounted, onUnmounted, nextTick, watch } = Vue;
 
 // IndexedDB Setup

@@ -18,18 +18,25 @@
     <script>
         // Wait for all libraries to load before loading app.js
         window.addEventListener('load', function() {
-            if (typeof Vue === 'undefined') {
-                console.error('Vue failed to load from CDN. Please check your internet connection.');
-                document.getElementById('app').innerHTML = '<div style="padding: 20px; text-align: center;"><h2>Error: Vue.js failed to load</h2><p>Please check your internet connection and refresh the page.</p></div>';
-            } else if (typeof idb === 'undefined') {
-                console.error('idb failed to load from CDN.');
-                document.getElementById('app').innerHTML = '<div style="padding: 20px; text-align: center;"><h2>Error: IndexedDB library failed to load</h2><p>Please check your internet connection and refresh the page.</p></div>';
-            } else {
-                // Load app.js after all dependencies are confirmed available
-                var script = document.createElement('script');
-                script.src = 'app.js';
-                document.body.appendChild(script);
-            }
+            // Additional wait to ensure libraries are fully parsed
+            setTimeout(function() {
+                if (typeof Vue === 'undefined') {
+                    console.error('Vue failed to load from CDN. Please check your internet connection.');
+                    document.getElementById('app').innerHTML = '<div style="padding: 20px; text-align: center;"><h2>Error: Vue.js failed to load</h2><p>Please check your internet connection and refresh the page.</p></div>';
+                } else if (typeof idb === 'undefined') {
+                    console.error('idb failed to load from CDN.');
+                    document.getElementById('app').innerHTML = '<div style="padding: 20px; text-align: center;"><h2>Error: IndexedDB library failed to load</h2><p>Please check your internet connection and refresh the page.</p></div>';
+                } else if (typeof VueVirtualScroller === 'undefined') {
+                    console.error('VueVirtualScroller failed to load from CDN.');
+                    document.getElementById('app').innerHTML = '<div style="padding: 20px; text-align: center;"><h2>Error: Virtual Scroller library failed to load</h2><p>Please check your internet connection and refresh the page.</p></div>';
+                } else {
+                    console.log('All libraries loaded successfully:', { Vue: !!Vue, idb: !!idb, VueVirtualScroller: !!VueVirtualScroller });
+                    // Load app.js after all dependencies are confirmed available
+                    var script = document.createElement('script');
+                    script.src = 'app.js';
+                    document.body.appendChild(script);
+                }
+            }, 100); // Small delay to ensure script parsing is complete
         });
     </script>
 </body>
